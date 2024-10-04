@@ -66,17 +66,22 @@ class InferenceNode:
         self.lock = threading.Lock()
         self.running = True
         # self.one_former_predict = model_inference()
-        self.call_model = model_inference_hg("mask2former")
+        self.call_model = model_inference_hg("oneformer")
 
         self.processing_thread = threading.Thread(target=self.run_inference)
         self.processing_thread.start()
         
-        self.spinner = rospy.Rate(100)  
+        self.spinner = rospy.Rate(100)
+        self.frame_count = 0
+        self.frame_skip = 3
+        
         print("InferenceNode initialized")
 
     def data_callback(self, msg):
         with self.lock:
-            self.data_queue.append(msg)
+            self.frame_count += 1
+            if self.frame_count % self.frame_skip == 0:
+                self.data_queue.append(msg)
             # print("Data received")
 
     def run_inference(self):
