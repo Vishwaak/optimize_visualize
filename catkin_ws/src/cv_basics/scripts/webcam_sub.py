@@ -15,40 +15,7 @@ import imutils
 from seg_models import model_inference_hg
 from PIL import Image as PILImage
 
-
-
-
-# # Instantiate CvBridge
-
-
-
-# def image_callback(msg):
-#     print("Received an image!")
-
-#     try:
-#         # Convert your ROS Image message to OpenCV2
-#         cv2_img = bridge.imgmsg_to_cv2(msg, "bgr8")
-#         image = imutils.resize(cv2_img, width=640)
-#         predict_thread = multiprocessing.Process(target=predict_segmentaion,args=[image, predictor, metadata])
-#         predict_thread.start()
-#     except CvBridgeError as e:
-#         print(e)
-#     else:
-#         # Save your OpenCV2 image as a jpeg 
-#         cv2.imshow("live_video", cv2_img)
-        
-#         cv2.waitKey(3)
-
-# def main():
-#     rospy.init_node('image_listener')
-#     # Define your image topic
-#     image_topic = "/img"
-#     # Set up your subscriber and define its callback
-#     rospy.Subscriber(image_topic, Image, image_callback)
-#     # Spin until ctrl + c
-#     rospy.spin()
-
-#!/usr/bin/env python
+import numpy as np
 
 
 import threading
@@ -124,10 +91,40 @@ class InferenceNode:
     def stop(self):
         self.running = False
 
+class depth_image:
+
+    def __init__ (self):
+        rospy.init_node('depth_image')
+        self.subscriber = rospy.Subscriber("/depth", Image, self.depth_callback)
+        self.publisher = rospy.Publisher('/output_depth_img', Image, queue_size=10)
+        self.bridge = CvBridge()
+
+    def depth_callback(self, msg):
+        try:
+            depth_image = self.bridge.imgmsg_to_cv2(msg, "passthrough")
+            depth_image = cv2.normalize(depth_image, None, 0, 255, cv2.NORM_MINMAX)
+            depth_image = np.clip(depth_image, 0, 255).astype(np.uint8)
+            filtered_image = cv2.medianBlur(depth_image, 3)
+            no_depth_mask_far = (filtered_image < 70)
+            # no_depth_mask_near = (filtered_image > 50)
+
+            depth_image_color = cv2.cvtColor(filtered_image, cv2.COLOR_GRAY2BGR)
+            depth_image_color[no_depth_mask_far] = [0, 255, 0]
+            # depth_image_color[no_depth_mask_near] = [0, 0, 255]
+
+        except CvBridgeError as e:
+            print(e)
+        else:
+            depth_image_color = depth_image_color.astype(np.uint8)
+            depth_image_color = self.bridge.cv2_to_imgmsg(depth_image_color, "bgr8")
+            self.publisher.publish(depth_image_color)   
+
+
 if __name__ == '__main__':
-    node = InferenceNode()
+    # node = InferenceNode()
+    node = depth_image()
     try:
-        node.start()
+        # node.start()
         rospy.spin()  
     except rospy.ROSInterruptException:
         node.stop()
