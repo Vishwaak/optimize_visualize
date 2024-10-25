@@ -25,6 +25,7 @@ class InferenceNode:
     def __init__(self):
         rospy.init_node('inference_node')
         # Publisher and Subscriber
+        #robot/front_rgbd_camera/rgb/image_raw
         self.subscriber = rospy.Subscriber("/img", Image, self.data_callback)
         self.publisher = rospy.Publisher('/output_data', Image, queue_size=10)
         self.bridge = CvBridge()
@@ -121,10 +122,10 @@ class depth_image:
 
 
 if __name__ == '__main__':
-    # node = InferenceNode()
-    node = depth_image()
+    node = InferenceNode()
+    # node = depth_image()
     try:
-        # node.start()
+        node.start()
         rospy.spin()  
     except rospy.ROSInterruptException:
         node.stop()
