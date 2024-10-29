@@ -13,51 +13,65 @@ import cv2
 import imutils
 # from seg_models import model_inference
 from seg_models import model_inference_hg
+from seg_models import onnx_infernce
+from seg_models import Visualizer
+
 from PIL import Image as PILImage
 
 import numpy as np
 
+from multiprocessing import Queue
 
 import threading
 import time
 
+import multiprocessing
+
+# Publisher and Subscriber
+#robot/front_rgbd_camera/rgb/image_raw
+
 class InferenceNode:
-    def __init__(self):
+    def __init__(self, flag="onnx"):
         rospy.init_node('inference_node')
-        # Publisher and Subscriber
-        #robot/front_rgbd_camera/rgb/image_raw
         self.subscriber = rospy.Subscriber("/img", Image, self.data_callback)
-        self.publisher = rospy.Publisher('/output_data', Image, queue_size=10)
+        self.publisher = rospy.Publisher('/output_data', Image, queue_size=100)
+        # self.call_model = model_inference_hg("mask2former", flag)
         self.bridge = CvBridge()
-        # Thread control
+      
         self.data_queue = []
         self.lock = threading.Lock()
         self.running = True
-        # self.one_former_predict = model_inference()
-        self.call_model = model_inference_hg("oneformer")
-
-        self.processing_thread = threading.Thread(target=self.run_inference)
+        self.processing_thread = multiprocessing.Process(target=self.run_inference)
         self.processing_thread.start()
         
         self.spinner = rospy.Rate(100)
         self.frame_count = 0
-        self.frame_skip = 3
-        
+        self.frame_skip = 2
+
+        self.flag = flag
+
+
+        self.onnx_model = onnx_infernce()
+        self.visualization = Visualizer()
+
+        self.segment_queue = Queue()
+
         print("InferenceNode initialized")
+        self.visualization_thread = multiprocessing.Process(target=self.run_visualization)
+        self.visualization_thread.start()
 
     def data_callback(self, msg):
         with self.lock:
             self.frame_count += 1
             if self.frame_count % self.frame_skip == 0:
                 self.data_queue.append(msg)
-            # print("Data received")
+            
 
     def run_inference(self):
         print("inference thread started")
         while self.running:
             with self.lock:
                 if self.data_queue:
-                    # print("Queue length",len(self.data_queue))
                     input_data = self.data_queue.pop(0)
                 else:
                     input_data = None
@@ -68,62 +82,54 @@ class InferenceNode:
                 input_image = cv2.cvtColor(input_image, cv2.COLOR_BGR2RGB)
                 input_image = PILImage.fromarray(input_image)
                 output_data = self.perform_inference(input_image)
-                print(len(self.data_queue))
-                output_image_msg = self.bridge.cv2_to_imgmsg(output_data, "bgr8")
-                self.publisher.publish(output_image_msg)
-                print("Published output image") 
+                print("input queue: ",len(self.data_queue))
+                self.segment_queue.put([output_data,input_image]) 
+                print("segment queue: ",self.segment_queue.qsize())
 
-            
+    def run_visualization(self):
+        print("starting visualization thread")
+        dynamic_frame_skip = 1
+        while self.running:
+            if not self.segment_queue.empty():
+                for i in range(dynamic_frame_skip):
+                    if not self.segment_queue.empty():
+                        self.segment_queue.get()
+                
+                seg,img = self.segment_queue.get()
+                start = time.time()
+                final_img = self.visualization.visual(seg, img)
+                final_img = self.bridge.cv2_to_imgmsg(final_img, "bgr8")
+                end = time.time()
+                print("+++++++++++++++++++Publishing image++++++++++++++++++++", end-start)
+                self.publisher.publish(final_img)
+                processing_time = end-start
+                if processing_time > 0.1:
+                    dynamic_frame_skip = 3
+                else:
+                    dynamic_frame_skip = 1
 
-    def perform_inference(self, image_data):
+    def perform_inference(self, image):
         print("Performing inference") 
-        # image = imutils.resize(image_data, width=640)
-        image = image_data
-        output = self.call_model.predict_segmentaion(image)
-        result = self.call_model.visualization(output, image)
-        # output = self.one_former_predict.predict_segmentaion(image)
+        if self.flag == "onnx":
+            output = self.onnx_model.run(image)
+        else: 
+            output = self.call_model.predict_segmentaion(image)
 
-        return result
+        return output
 
     def start(self):
         threading.Thread(target=self.run_inference).start()
+        threading.Thread(target=self.run_visualization).start()
         print("Thread started")
 
     def stop(self):
         self.running = False
 
-class depth_image:
-
-    def __init__ (self):
-        rospy.init_node('depth_image')
-        self.subscriber = rospy.Subscriber("/depth", Image, self.depth_callback)
-        self.publisher = rospy.Publisher('/output_depth_img', Image, queue_size=10)
-        self.bridge = CvBridge()
-
-    def depth_callback(self, msg):
-        try:
-            depth_image = self.bridge.imgmsg_to_cv2(msg, "passthrough")
-            depth_image = cv2.normalize(depth_image, None, 0, 255, cv2.NORM_MINMAX)
-            depth_image = np.clip(depth_image, 0, 255).astype(np.uint8)
-            filtered_image = cv2.medianBlur(depth_image, 3)
-            no_depth_mask_far = (filtered_image < 70)
-            # no_depth_mask_near = (filtered_image > 50)
-
-            depth_image_color = cv2.cvtColor(filtered_image, cv2.COLOR_GRAY2BGR)
-            depth_image_color[no_depth_mask_far] = [0, 255, 0]
-            # depth_image_color[no_depth_mask_near] = [0, 0, 255]
-
-        except CvBridgeError as e:
-            print(e)
-        else:
-            depth_image_color = depth_image_color.astype(np.uint8)
-            depth_image_color = self.bridge.cv2_to_imgmsg(depth_image_color, "bgr8")
-            self.publisher.publish(depth_image_color)   
 
 
 if __name__ == '__main__':
-    node = InferenceNode()
-    # node = depth_image()
+    #withtout onnx 0.1
+    node = InferenceNode("onnx")
     try:
         node.start()
         rospy.spin()  
