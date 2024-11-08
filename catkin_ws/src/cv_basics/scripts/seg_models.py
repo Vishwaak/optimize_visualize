@@ -185,7 +185,10 @@ class onnx_infernce:
     
     def run(self, inputs):
         inputs = self.onnx_preprocessing(inputs)
+        start = time.time()
         output = self.predict(inputs)
+        end = time.time()
+        print(f"==============prediction time {end - start}=========")
         return output
 
 
@@ -198,6 +201,14 @@ class Visualizer:
         class_queries_logits, masks_queries_logits, *_ = output
         return Mask2FormerForUniversalSegmentationOutput(class_queries_logits=torch.tensor(class_queries_logits), masks_queries_logits=torch.tensor(masks_queries_logits))
     
+    def convert_segmenation_poly(self, seg_img, image):
+        binary_mask = np.where(seg_img == 12, 255, 0).astype(np.uint8)
+        contours, _ = cv2.findContours(binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        epsilon = 0.007 * cv2.arcLength(contours[0], True)
+        polygons = [cv2.approxPolyDP(contour, epsilon, True) for contour in contours]
+        poly_image = cv2.fillPoly(np.zeros_like(image), polygons, (255, 255, 255))
+        return poly_image
+
     def visual(self, seg_img, image):
         seg_img = self.post_processing(seg_img)
         seg_image = post_process_semantic_segmentation1(seg_img, target_sizes=[image.size[::-1]])[0]
@@ -206,13 +217,16 @@ class Visualizer:
         
         default_color = (0, 0,0)
         seg_image = seg_image.cpu()
-        for label in np.unique(seg_image):
+        poly_seg_image = seg_image.cpu().numpy().astype(np.uint8)
+        poly_image = self.convert_segmenation_poly(seg_image, image)
+        
+        for label in [3,12]:
             if label < len(self.palette):
                 color_segmentation_map[seg_image == label, :] = self.palette[label]
             else:
                 color_segmentation_map[seg_image == label, :] = default_color
                 
-        return color_segmentation_map[..., ::-1]
+        return color_segmentation_map[..., ::-1], poly_image
 
   
         
