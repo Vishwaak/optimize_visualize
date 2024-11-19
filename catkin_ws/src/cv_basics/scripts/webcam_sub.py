@@ -33,9 +33,9 @@ import multiprocessing
 class InferenceNode:
     def __init__(self, flag="onnx"):
         rospy.init_node('inference_node')
-        self.subscriber = rospy.Subscriber("/webcamera", Image, self.data_callback)
-        self.publisher = rospy.Publisher('/output_data', Image, queue_size=100)
-        self.poly_pub = rospy.Publisher('/poly_img', Image, queue_size=100)
+        self.subscriber = rospy.Subscriber("/img", Image, self.data_callback)
+        self.publisher = rospy.Publisher('/seg_img_1', Image, queue_size=10)
+        # self.poly_pub = rospy.Publisher('/poly_img', Image, queue_size=100)
 
         # self.call_model = model_inference_hg("mask2former", flag)
         self.bridge = CvBridge()
@@ -44,8 +44,8 @@ class InferenceNode:
         self.depth_queue = []
         self.lock = threading.Lock()
         self.running = True
-        self.processing_thread = multiprocessing.Process(target=self.run_inference)
-        self.processing_thread.start()
+        self.processing_thread = threading.Thread(target=self.run_inference)
+        
         
         self.spinner = rospy.Rate(100)
         self.frame_count = 0
@@ -60,8 +60,8 @@ class InferenceNode:
         self.segment_queue = Queue()
 
         print("InferenceNode initialized")
-        self.visualization_thread = multiprocessing.Process(target=self.run_visualization)
-        self.visualization_thread.start()
+        self.visualization_thread = threading.Thread(target=self.run_visualization)
+      
 
     def data_callback(self, msg):
         with self.lock:
@@ -80,17 +80,17 @@ class InferenceNode:
                     input_data = None
 
             if input_data is not None:
-                print("Processing data")
+                # print("Processing data")
                 input_image = self.bridge.imgmsg_to_cv2(input_data, "bgr8")
                 input_image = cv2.cvtColor(input_image, cv2.COLOR_BGR2RGB)
                 input_image = PILImage.fromarray(input_image)
                 output_data = self.perform_inference(input_image)
-                print("input queue: ",len(self.data_queue))
+                # print("input queue: ",len(self.data_queue))
                 self.segment_queue.put([output_data,input_image]) 
-                print("segment queue: ",self.segment_queue.qsize())
+                # print("segment queue: ",self.segment_queue.qsize())
 
     def run_visualization(self):
-        print("starting visualization thread")
+        # print("starting visualization thread")
         dynamic_frame_skip = 1
         while self.running:
             if not self.segment_queue.empty():
@@ -100,20 +100,20 @@ class InferenceNode:
                 
                 seg,img = self.segment_queue.get()
                 start = time.time()
-                seg_img, poly_img = self.visualization.visual(seg, img)
-                final_img = cv2.cvtColor(seg_img, cv2.COLOR_RGB2BGR)
-                poly_img = cv2.cvtColor(poly_img, cv2.COLOR_RGB2BGR)
+                seg_img, poly_vis = self.visualization.visual(seg, img)
+                seg_vis = cv2.cvtColor(seg_img, cv2.COLOR_RGB2BGR)
+                # poly_img = cv2.cvtColor(poly_vis, cv2.COLOR_RGB2BGR)
 
                 end = time.time()
                 processing_time = end - start
                 fps = 1.0 / processing_time
                 fps_text = f"FPS: {fps:.2f}"
-                final_img = self.bridge.cv2_to_imgmsg(final_img, "bgr8")
-                poly_img = self.bridge.cv2_to_imgmsg(poly_img, "bgr8")
+                seg_vis = self.bridge.cv2_to_imgmsg(seg_vis, "bgr8")
+                # poly_img = self.bridge.cv2_to_imgmsg(poly_img, "bgr8")
 
-                print("+++++++++++++++++++Publishing image++++++++++++++++++++", end-start)
-                self.publisher.publish(final_img)
-                self.poly_pub.publish(poly_img)
+                # print("+++++++++++++++++++Publishing image++++++++++++++++++++", end-start)
+                self.publisher.publish(seg_vis)
+                # self.poly_pub.publish(poly_img)
                 
                 print(fps_text)
                 
@@ -135,13 +135,10 @@ class InferenceNode:
         return output
 
 
-   
-
     def start(self):
-        threading.Thread(target=self.run_inference).start()
-        threading.Thread(target=self.run_visualization).start()
-        print("Thread started")
-
+        self.processing_thread.start()
+        self.visualization_thread.start()
+     
     def stop(self):
         self.running = False
 
