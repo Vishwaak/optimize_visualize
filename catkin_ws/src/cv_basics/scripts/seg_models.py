@@ -45,6 +45,7 @@ from transformers import AutoImageProcessor
 import numpy as np
 
 from predict_utils import post_process_semantic_segmentation1
+import cupy as cp
 
 def ade_palette():
     # Define the ADE20K palette
@@ -153,10 +154,10 @@ class model_inference_hg:
 
         ground_truth_color_seg = color_segmentation_map[..., ::-1]
 
-        # img = np.array(image) * 0.5 + ground_truth_color_seg * 0.5
-        # img = img.astype(np.uint8)
-        return color_segmentation_map
-        #return img
+        img = np.array(image) * 0.5 + ground_truth_color_seg * 0.5
+        img = img.astype(np.uint8)
+        #return color_segmentation_map
+        return img
 
 
 class onnx_infernce:
@@ -201,31 +202,59 @@ class Visualizer:
         class_queries_logits, masks_queries_logits, *_ = output
         return Mask2FormerForUniversalSegmentationOutput(class_queries_logits=torch.tensor(class_queries_logits), masks_queries_logits=torch.tensor(masks_queries_logits))
     
-    def convert_segmenation_poly(self, seg_img, image):
-        binary_mask = np.where(seg_img == 12, 255, 0).astype(np.uint8)
-        contours, _ = cv2.findContours(binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        epsilon = 0.007 * cv2.arcLength(contours[0], True)
-        polygons = [cv2.approxPolyDP(contour, epsilon, True) for contour in contours]
-        poly_image = cv2.fillPoly(np.zeros_like(image), polygons, (255, 255, 255))
-        return poly_image
+    def convert_segmenation_poly(self, labels, seg_img, image):
+        poly_images = []
+        epsilon_const = {3: 0.01, 12: 0.007}
+
+        for label in labels:
+            binary_mask = np.where(seg_img == label, 255, 0).astype(np.uint8)
+            contours, _ = cv2.findContours(binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            epsilon = epsilon_const[label] * cv2.arcLength(contours[0], True)
+            polygons = [cv2.approxPolyDP(contour, epsilon, True) for contour in contours]
+            poly_images.append(cv2.fillPoly(np.zeros_like(image), polygons, (255, 255, 255)))
+
+        if len(poly_images) == 2:
+            return cv2.addWeighted(poly_images[0],1,poly_images[1],1,0)
+        
+        return np.array(poly_images[0], dtype=np.uint8)
 
     def visual(self, seg_img, image):
+        default_color = (0, 0,0)
+        sel_lables = [3,12]
+
+
         seg_img = self.post_processing(seg_img)
         seg_image = post_process_semantic_segmentation1(seg_img, target_sizes=[image.size[::-1]])[0]
-      
-        color_segmentation_map = np.zeros((seg_image.shape[0], seg_image.shape[1], 3), dtype=np.uint8)
-        
-        default_color = (0, 0,0)
+        # color_segmentation_map = np.zeros((seg_image.shape[0], seg_image.shape[1], 3), dtype=np.uint8)
+
         seg_image = seg_image.cpu()
-        poly_seg_image = seg_image.cpu().numpy().astype(np.uint8)
-        poly_image = self.convert_segmenation_poly(seg_image, image)
+        seg_image = cp.asarray(seg_image)
+        color_segmentation_map = cp.zeros((seg_image.shape[0], seg_image.shape[1], 3), dtype=cp.uint8)
+
+        poly_image = seg_image
         
-        for label in [3,12]:
-            if label < len(self.palette):
-                color_segmentation_map[seg_image == label, :] = self.palette[label]
-            else:
-                color_segmentation_map[seg_image == label, :] = default_color
-                
+        palette_len = len(self.palette)
+
+        within_palette_labels = [label for label in sel_lables if label < palette_len]
+        outside_palette_labels = [label for label in sel_lables if label >= palette_len]
+
+        for label in within_palette_labels:
+            cp.copyto(color_segmentation_map, cp.asarray(self.palette[label]), where=(seg_image == label)[..., None])
+
+        for label in outside_palette_labels:
+            cp.copyto(color_segmentation_map, cp.asarray(default_color), where=(seg_image == label)[..., None])
+
+        color_segmentation_map = cp.asnumpy(color_segmentation_map)
+
+        # for label in sel_lables:
+        #     if label < palette_len:
+        #         color_segmentation_map[seg_image == label, :] = self.palette[label]
+        #     else:
+        #         color_segmentation_map[seg_image == label, :] = default_color
+        
+        # ground_truth_color_seg = color_segmentation_map[..., ::-1]
+        # overlay_image = np.array(image) * 0.5 + ground_truth_color_seg * 0.5
+        # overlay_image = overlay_image.astype(np.uint8)
         return color_segmentation_map[..., ::-1], poly_image
 
   
