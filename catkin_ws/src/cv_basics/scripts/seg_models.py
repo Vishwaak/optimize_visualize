@@ -171,9 +171,14 @@ class onnx_infernce:
         ort_inputs = {"pixel_values": inputs["pixel_values"].cpu().detach().numpy()}
         return ort_inputs
 
-    def load_(self):
+    def load_(self, load_model=True):
         image_processor = AutoImageProcessor.from_pretrained("facebook/mask2former-swin-tiny-ade-semantic")
-        model = ort.InferenceSession("mask2former.onnx", providers=["CUDAExecutionProvider"])
+        
+        if load_model:
+            model = ort.InferenceSession("mask2former.onnx", providers=["CUDAExecutionProvider"])
+        else:
+            model = None
+
         return model, image_processor
     
     def predict(self, inputs):
