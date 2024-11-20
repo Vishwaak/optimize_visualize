@@ -43,8 +43,11 @@ image = Image.open(image_path)
 
 inputs = processor(Image.open(image_path), return_tensors="pt")
 
+# print(inputs["pixel_values"].shape)
+ 
 ort_inputs = {"pixel_values": inputs["pixel_values"].cpu().detach().numpy()}
 
+print(ort_inputs["pixel_values"])
 # input_names[1]: inputs["pixel_mask"].cpu().detach().numpy()
 
 inputs = {k: v.cuda() for k, v in inputs.items()} 
@@ -142,6 +145,9 @@ def convert_segmenation_poly(seg_img, image):
 
 class_queries_logits = torch.from_numpy(class_queries_logits)
 masks_queries_logits = torch.from_numpy(masks_queries_logits)
+
+print(class_queries_logits.shape)
+print(masks_queries_logits.shape)
 
 start = time.time()
 seg_image = Mask2FormerForUniversalSegmentationOutput(class_queries_logits=class_queries_logits,masks_queries_logits= masks_queries_logits)

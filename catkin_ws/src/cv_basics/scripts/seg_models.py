@@ -244,13 +244,13 @@ class Visualizer:
         outside_palette_labels = [label for label in sel_lables if label >= palette_len]
 
         for label in within_palette_labels:
-            cp.copyto(color_segmentation_map, cp.asarray(self.palette[label]), where=(seg_image == label)[..., None])
+            color_segmentation_map[seg_image == label, :] = self.palette[label]
+         
 
         for label in outside_palette_labels:
-            cp.copyto(color_segmentation_map, cp.asarray(default_color), where=(seg_image == label)[..., None])
+            color_segmentation_map[seg_image == label, :] = default_color
 
-        color_segmentation_map = cp.asnumpy(color_segmentation_map)
-
+        
         # for label in sel_lables:
         #     if label < palette_len:
         #         color_segmentation_map[seg_image == label, :] = self.palette[label]
