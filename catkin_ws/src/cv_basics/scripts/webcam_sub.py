@@ -28,7 +28,7 @@ import threading
 import time
 
 import multiprocessing as mp
-from trt_py import trt_infernce, visualize_image
+from trt_py import trt_infernce, SegmentVisual
 
 import pycuda.driver as cuda
 
@@ -41,14 +41,16 @@ class InferenceNode:
         rospy.init_node("inference_node")
         self.subscriber = rospy.Subscriber("/img", Image, self.data_callback)
         self.publisher = rospy.Publisher(
-            "/seg_img_1", Image, queue_size=100, latch=True
+            "/seg_img", Image, queue_size=100, latch=True
         )
-       
-
+        self.poly_publisher = rospy.Publisher(
+           "/poly_img", Image, queue_size=100, latch=True
+         )
         self.bridge = CvBridge()
 
         self.data_queue = Queue()
         self.segment_queue = Queue()
+        self.poly_queue = Queue()
 
         self.lock = threading.Lock()
         self.running = True
@@ -57,21 +59,22 @@ class InferenceNode:
         self.frame_count = 0
         self.frame_skip = 2
 
-        self.visualization = Visualizer()
+        self.visual_output = SegmentVisual()
 
         print("InferenceNode initialized")
         self.predict_prc = mp.Process(
             target=self.run_inference,
             args=(self.data_queue, self.segment_queue, self.lock),
         )
-        self.visul_prc = threading.Thread(
+        self.seg_prc = threading.Thread(
             target=self.run_visualization, args=(self.segment_queue,)
         )
-
+        self.poly_thrt = threading.Thread(
+            target=self.run_poly_visualization, args=(self.poly_queue,)
+        )
     def data_callback(self, msg):
         with self.lock:
             self.frame_count += 1
-            # if self.frame_count % self.frame_skip == 0:
             self.data_queue.put(msg)
 
     def run_inference(self, data_queue, segment_queue, lock):
@@ -98,7 +101,10 @@ class InferenceNode:
                 input_image = PILImage.fromarray(
                     cv2.cvtColor(input_image, cv2.COLOR_BGR2RGB)
                 )
+                start = time.time()
                 class_logits, mask_logits = self.predict_prc.predict(input_image)
+                end = time.time()
+                print(" ML time: ", end - start)
                 segment_queue.put([class_logits, mask_logits, input_image])
 
         ctx.pop()
@@ -107,7 +113,7 @@ class InferenceNode:
         # print("starting visualization thread")
         print("visualization thread started")
         dynamic_frame_skip = 1
-        k = 0
+       
         while self.running:
             if not segment_queue.empty():
                 for i in range(dynamic_frame_skip):
@@ -116,25 +122,38 @@ class InferenceNode:
 
                 seg, mask, img = segment_queue.get()
                 start = time.time()
-                seg_img = visualize_image(seg, mask, img)
+                seg_img = self.visual_output.segment_visual(seg, mask, img, self.poly_queue)
                 seg_vis = cv2.cvtColor(seg_img, cv2.COLOR_RGB2BGR)
 
                 end = time.time()
-                processing_time = end - start
 
-                k += 1
+                processing_time = end - start
                 seg_vis = self.bridge.cv2_to_imgmsg(seg_vis, "bgr8")
 
-                print("segment queue: ", segment_queue.qsize())
+                
                 self.publisher.publish(seg_vis)
-                print("published")
+                # print("published")
 
                 if processing_time > 0.1:
                     dynamic_frame_skip = 3
                 else:
                     dynamic_frame_skip = 1
                     # Calculate FPS
-                print("FPS: ", 1.0 / processing_time)
+                # print("FPS: ", 1.0 / processing_time)
+    
+    def run_poly_visualization(self, poly_queue):
+        print("starting poly visualization thread")
+        output_queue = Queue()
+        self.poly_proc = mp.Process(target=self.visual_output.poly_visual, args=(poly_queue, output_queue))
+        self.poly_proc.start()
+        while self.running:
+            if not output_queue.empty():
+               
+                poly_image = output_queue.get()
+                poly_vis = cv2.cvtColor(poly_image, cv2.COLOR_RGB2BGR)
+                poly_vis = self.bridge.cv2_to_imgmsg(poly_vis, "bgr8")
+                self.poly_publisher.publish(poly_vis)
+                print("publishing poly image")
 
     def perform_inference(self, image):
         print("Performing inference")
@@ -147,7 +166,8 @@ class InferenceNode:
 
     def start(self):
         self.predict_prc.start()
-        self.visul_prc.start()
+        self.seg_prc.start()
+        self.poly_thrt.start()
 
     def stop(self):
         self.running = False
