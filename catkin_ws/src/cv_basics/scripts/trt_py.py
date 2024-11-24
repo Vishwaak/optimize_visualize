@@ -1,7 +1,7 @@
 import numpy as np
 import pycuda.driver as cuda 
 import tensorrt as trt
-import time
+import cv2
 import torch
 
 
@@ -12,7 +12,7 @@ from transformers.models.mask2former.modeling_mask2former import Mask2FormerForU
 from transformers import AutoImageProcessor
 from predict_utils import post_process_semantic_segmentation1, ade_palette
 
-image_queue = Queue()   
+import time
 
 class TensorRTInference:
     def __init__(self, engine_path):
@@ -24,8 +24,6 @@ class TensorRTInference:
         self.context = self.engine.create_execution_context()
         self.inputs, self.outputs, self.bindings, self.stream = self.allocate_buffers(self.engine)
        
-       
-
         # Allocate buffers
         
 
@@ -112,25 +110,61 @@ class trt_infernce:
         print("done prediction")
         return class_queries_logits, masks_queries_logits
 
+class SegmentVisual:
 
-def visualize_image(class_queries_logits, masks_queries_logits, image):
-    palette = ade_palette()
-    class_queries_logits = class_queries_logits.reshape(1, 100, 151)
-    masks_queries_logits = masks_queries_logits.reshape(1, 100, 96, 96)
-    class_queries_logits = torch.from_numpy(class_queries_logits)
-    masks_queries_logits = torch.from_numpy(masks_queries_logits)
-    seg_image = Mask2FormerForUniversalSegmentationOutput(class_queries_logits=class_queries_logits,masks_queries_logits= masks_queries_logits)
-    seg_image = post_process_semantic_segmentation1(seg_image, target_sizes=[image.size[::-1]])[0]
-    color_segmentation_map = np.zeros((seg_image.shape[0], seg_image.shape[1], 3), dtype=np.uint8)  # height, width, 3
-    seg_image = seg_image.cpu().numpy().astype(np.uint8)
-    for label, color in enumerate(palette):
-        color_segmentation_map[seg_image == label, :] = color
+    def __init__(self):
+        self.palette = ade_palette()
+        self.selected_labels = [3,12]
+        pass
+    
+    
+    def segment_visual(self, class_queries_logits, masks_queries_logits, image, poly_queue):
+        
+        class_queries_logits = torch.from_numpy(class_queries_logits.reshape(1, 100, 151))
+        masks_queries_logits = torch.from_numpy(masks_queries_logits.reshape(1, 100, 96, 96))
+        seg_image = Mask2FormerForUniversalSegmentationOutput(class_queries_logits=class_queries_logits,masks_queries_logits= masks_queries_logits)
+        seg_image = post_process_semantic_segmentation1(seg_image, target_sizes=[image.size[::-1]])[0]
+        color_segmentation_map = np.zeros((seg_image.shape[0], seg_image.shape[1], 3), dtype=np.uint8)  # height, width, 3
+        seg_image = seg_image.cpu().numpy().astype(np.uint8)
+        poly_seg = seg_image.copy()
+        poly_image = image.copy()
+        
+        poly_queue.put([poly_seg, poly_image])
 
-    end = time.time()
+        for label in self.selected_labels:
+            color_segmentation_map[seg_image == label, :] = self.palette[label]
+        
+        img = np.array(image) * 0.5 + color_segmentation_map[..., ::-1] * 0.5
+        
+        return img.astype(np.uint8)
 
-    ground_truth_color_seg = color_segmentation_map[..., ::-1]
+    def poly_visual(self, poly_queue, output_queue):
 
-    img = np.array(image) * 0.5 + ground_truth_color_seg * 0.5
-    img = img.astype(np.uint8)
-    return img
+        poly_images = []
+        epsilon_const = {3: 0.01, 12: 0.007}
 
+        while True:
+       
+            if not poly_queue.empty():
+                print("here")
+                seg_img, image = poly_queue.get() 
+                for label in self.selected_labels:
+                    binary_mask = np.where(seg_img == label, 255, 0).astype(np.uint8)
+                    contours, _ = cv2.findContours(binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+                    if contours:
+                        epsilon = epsilon_const[label] * cv2.arcLength(contours[0], True)
+                        start = time.time()
+                        polygons = [cv2.approxPolyDP(contour, epsilon, True) for contour in contours]
+                        end = time.time()
+                        print("time: ", end - start)
+
+                        poly_images.append(cv2.fillPoly(np.zeros_like(image), polygons, self.palette[label]))
+
+                if len(poly_images) == 2:
+                    result = cv2.addWeighted(poly_images[0],1,poly_images[1],1,0)
+                elif len(poly_images) == 1:
+                    result =  np.array(poly_images[0], dtype=np.uint8)
+                else:
+                    result =  np.zeros_like(image)
+                output_queue.put(result)
