@@ -7,6 +7,8 @@ import rospy
 # ROS Image message
 from sensor_msgs.msg import Image
 
+from cv_basics.msg import poly
+
 # ROS Image message -> OpenCV2 image converter
 from cv_bridge import CvBridge, CvBridgeError
 
@@ -15,8 +17,6 @@ import cv2
 
 # from seg_models import model_inference
 
-from seg_models import onnx_infernce
-from seg_models import Visualizer
 
 from PIL import Image as PILImage
 
@@ -43,8 +43,8 @@ class InferenceNode:
         self.publisher = rospy.Publisher(
             "/seg_img", Image, queue_size=100, latch=True
         )
-        self.poly_publisher = rospy.Publisher(
-           "/poly_img", Image, queue_size=100, latch=True
+        self.poly_data_publisher = rospy.Publisher(
+           "/poly_pre", poly, queue_size=100, latch=True
          )
         self.bridge = CvBridge()
 
@@ -104,7 +104,7 @@ class InferenceNode:
                 start = time.time()
                 class_logits, mask_logits = self.predict_prc.predict(input_image)
                 end = time.time()
-                print(" ML time: ", end - start)
+                # print(" ML time: ", end - start)
                 segment_queue.put([class_logits, mask_logits, input_image])
 
         ctx.pop()
@@ -122,17 +122,24 @@ class InferenceNode:
 
                 seg, mask, img = segment_queue.get()
                 start = time.time()
-                seg_img = self.visual_output.segment_visual(seg, mask, img, self.poly_queue)
+                seg_img, poly_seg = self.visual_output.segment_visual(seg, mask, img)
                 seg_vis = cv2.cvtColor(seg_img, cv2.COLOR_RGB2BGR)
 
                 end = time.time()
 
                 processing_time = end - start
                 seg_vis = self.bridge.cv2_to_imgmsg(seg_vis, "bgr8")
-
+                poly_seg_msg = self.bridge.cv2_to_imgmsg(poly_seg)
+                img= np.array(img)
+                poly_seg_img = self.bridge.cv2_to_imgmsg(img, "bgr8")
+                
+                poly_msg = poly()
+                poly_msg.segment_image = poly_seg_msg
+                poly_msg.frame = poly_seg_img
                 
                 self.publisher.publish(seg_vis)
-                # print("published")
+                self.poly_data_publisher.publish(poly_msg)
+                print("published")
 
                 if processing_time > 0.1:
                     dynamic_frame_skip = 3
@@ -167,7 +174,7 @@ class InferenceNode:
     def start(self):
         self.predict_prc.start()
         self.seg_prc.start()
-        self.poly_thrt.start()
+        # self.poly_thrt.start()
 
     def stop(self):
         self.running = False

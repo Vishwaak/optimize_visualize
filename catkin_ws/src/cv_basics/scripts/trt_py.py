@@ -118,7 +118,7 @@ class SegmentVisual:
         pass
     
     
-    def segment_visual(self, class_queries_logits, masks_queries_logits, image, poly_queue):
+    def segment_visual(self, class_queries_logits, masks_queries_logits, image):
         
         class_queries_logits = torch.from_numpy(class_queries_logits.reshape(1, 100, 151))
         masks_queries_logits = torch.from_numpy(masks_queries_logits.reshape(1, 100, 96, 96))
@@ -127,44 +127,36 @@ class SegmentVisual:
         color_segmentation_map = np.zeros((seg_image.shape[0], seg_image.shape[1], 3), dtype=np.uint8)  # height, width, 3
         seg_image = seg_image.cpu().numpy().astype(np.uint8)
         poly_seg = seg_image.copy()
-        poly_image = image.copy()
         
-        poly_queue.put([poly_seg, poly_image])
-
         for label in self.selected_labels:
             color_segmentation_map[seg_image == label, :] = self.palette[label]
         
         img = np.array(image) * 0.5 + color_segmentation_map[..., ::-1] * 0.5
         
-        return img.astype(np.uint8)
+        return img.astype(np.uint8), poly_seg.astype(np.uint8)
 
-    def poly_visual(self, poly_queue, output_queue):
+    def poly_visual(self, seg_img, image):
 
         poly_images = []
         epsilon_const = {3: 0.01, 12: 0.007}
 
-        while True:
-       
-            if not poly_queue.empty():
-                print("here")
-                seg_img, image = poly_queue.get() 
-                for label in self.selected_labels:
-                    binary_mask = np.where(seg_img == label, 255, 0).astype(np.uint8)
-                    contours, _ = cv2.findContours(binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for label in self.selected_labels:
+            binary_mask = np.where(seg_img == label, 255, 0).astype(np.uint8)
+            contours, _ = cv2.findContours(binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-                    if contours:
-                        epsilon = epsilon_const[label] * cv2.arcLength(contours[0], True)
-                        start = time.time()
-                        polygons = [cv2.approxPolyDP(contour, epsilon, True) for contour in contours]
-                        end = time.time()
-                        print("time: ", end - start)
+            if contours:
+                epsilon = epsilon_const[label] * cv2.arcLength(contours[0], True)
+                start = time.time()
+                polygons = [cv2.approxPolyDP(contour, epsilon, True) for contour in contours]
+                end = time.time()
+                print("time: ", end - start)
 
-                        poly_images.append(cv2.fillPoly(np.zeros_like(image), polygons, self.palette[label]))
+                poly_images.append(cv2.fillPoly(np.zeros_like(image), polygons, self.palette[label]))
 
-                if len(poly_images) == 2:
-                    result = cv2.addWeighted(poly_images[0],1,poly_images[1],1,0)
-                elif len(poly_images) == 1:
-                    result =  np.array(poly_images[0], dtype=np.uint8)
-                else:
-                    result =  np.zeros_like(image)
-                output_queue.put(result)
+        if len(poly_images) == 2:
+            return cv2.addWeighted(poly_images[0],1,poly_images[1],1,0)
+        elif len(poly_images) == 1:
+            return np.array(poly_images[0], dtype=np.uint8)
+        else:
+            return np.zeros_like(image)
+        
