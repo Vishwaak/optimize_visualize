@@ -128,8 +128,14 @@ class SegmentVisual:
         seg_image = seg_image.cpu().numpy().astype(np.uint8)
         poly_seg = seg_image.copy()
         
+
+        default_color = (0, 255, 255)
+        seg_image = cv2.dilate(seg_image.astype(np.uint8), np.ones((5, 5), np.uint8), iterations=1)
+        selected_mask = np.isin(seg_image, self.selected_labels)
         for label in self.selected_labels:
-            color_segmentation_map[seg_image == label, :] = self.palette[label]
+            color_segmentation_map[seg_image == label] = self.palette[label]
+        color_segmentation_map[~selected_mask] = default_color
+
         
         img = np.array(image) * 0.5 + color_segmentation_map[..., ::-1] * 0.5
         
@@ -154,9 +160,13 @@ class SegmentVisual:
                 poly_images.append(cv2.fillPoly(np.zeros_like(image), polygons, self.palette[label]))
 
         if len(poly_images) == 2:
-            return cv2.addWeighted(poly_images[0],1,poly_images[1],1,0)
+            result = cv2.addWeighted(poly_images[0],1,poly_images[1],1,0)
         elif len(poly_images) == 1:
-            return np.array(poly_images[0], dtype=np.uint8)
+            result =  np.array(poly_images[0], dtype=np.uint8)
         else:
-            return np.zeros_like(image)
+            result = np.zeros_like(image)
+        
+        result[np.all(result == [0, 0, 0], axis=-1)] = [0, 255, 255]
+
+        return result
         

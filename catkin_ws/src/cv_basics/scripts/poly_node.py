@@ -34,8 +34,8 @@ class polyNode:
                 image = self.bridge.imgmsg_to_cv2(data.frame)
                 poly_image = self.visual_output.poly_visual(seg_img, image)
                 print(poly_image)
-                poly_vis = cv2.cvtColor(poly_image, cv2.COLOR_RGB2BGR)
-                poly_vis = self.bridge.cv2_to_imgmsg(poly_vis, "bgr8")
+                # poly_vis = cv2.cvtColor(poly_image, cv2.COLOR_RGB2BGR)
+                poly_vis = self.bridge.cv2_to_imgmsg(poly_image, "bgr8")
                 self.poly_publisher.publish(poly_vis)
             else:
                 print("no data")
