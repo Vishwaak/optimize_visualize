@@ -16,11 +16,13 @@ def haptic_force(x, min_distnace, max_distance, case=2):
     elif case == 2:
         norm = max_distance - min_distnace
         y = ((max_distance - x) / norm)**2
-     
+        return y
+
+    elif case ==3:
+        y = 1/math.exp((x**2)*math.pi)
         return y
 
 def directional(angle):
-    # input_angle = angle
     input_angle = math.radians(angle)
     right_haptic = 0.5 + (math.sin(input_angle))/2
     left_haptic = 0.5 + (math.sin(-input_angle))/2
@@ -44,7 +46,7 @@ def test_cases(case, max_distance, min_distance):
     
     if case == 1:
         # distance = np.append(np.arange(min_distance, max_distance, 1),(np.arange(max_distance, min_distance, -1)))
-        distance = np.append(np.arange(max_distance, min_distance, -1), np.arange(min_distance, max_distance, 1))
+        distance = np.append(np.arange(max_distance, min_distance, -1), np.arange(min_distance, max_distance+1, 1))
         angle = distance * 0
     elif case == 2:
         # distance = np.append(np.arange(max_distance, min_distance, -1), np.arange(min_distance, max_distance, 1))
@@ -52,13 +54,15 @@ def test_cases(case, max_distance, min_distance):
         angle  = np.arange(90,270,((270 - 90)//len(distance)))
 
     elif case == 3:
-        distance = np.append(np.arange(min_distance, max_distance, 1),(np.arange(max_distance, min_distance, -1)))
+        # distance = np.append(np.arange(min_distance, max_distance, 1),(np.arange(max_distance, min_distance, -1)))
+        distance = np.append(np.arange(max_distance, min_distance, -1), np.arange(min_distance, max_distance+1, 1))
         angle = np.arange(270,450,((450 - 270)//len(distance)))
         angle  = [a if a < 360 else a%360 for a in angle ]  
-    
+        distance = distance * 0
+        distance = distance + 5
     elif case == 4:
-        distance = np.append(np.arange(max_distance, min_distance, -1), np.arange(min_distance, max_distance, 1))
-        angle = np.arange(270,450,((450 - 270)//len(distance)))
+        distance = np.append(np.arange(max_distance, min_distance, -1), np.arange(min_distance, max_distance+1, 1))
+        angle = np.arange(270,450,((450 - 270)//len(distance)-1))
         angle  = [a if a < 360 else a%360 for a in angle ] 
     else:
         print("not a valid case")
@@ -72,7 +76,7 @@ def pattern_vibrate(left, right, time=[], count=10):
             if index%2 == 0:
                 haptic.vibrate_left(left)
             else:
-                haptic.virbate_right(right)
+                haptic.vibrate_right(right)
             sleep(t)
         print("current count", curr_count)
         curr_count += 1
@@ -125,12 +129,56 @@ if __name__ == "__main__":
     haptic = haptic_controller()
     min_distance = 5
     max_distance = 10
-    rand_dst, rand_angle = test_cases(1, max_distance, min_distance)
+    rand_dst, rand_angle = test_cases(3, max_distance, min_distance)
 
-    print(rand_dst, rand_angle)
+    # print(rand_dst, rand_angle)
     
     scaleL = 50
     scaleR = 255
+
+    count = 1
+    x_rms = np.array([])
+    y_rms = np.array([])
+    z_rms = np.array([])
+    while True:
+        curr_x = haptic.ds.state.RX
+        curr_y = haptic.ds.state.RY
+
+        x_rms = np.append(x_rms,haptic.ds.state.accelerometer.X)
+        y_rms = np.append(y_rms, haptic.ds.state.accelerometer.Y)
+        z_rms = np.append(z_rms, haptic.ds.state.accelerometer.Z)
+        
+        # distance = math.sqrt((0- curr_x)**2 + (0-curr_y**2)**2)
+        angle =(90+ math.degrees(math.atan2(curr_y, curr_x) +  -1*(np.sign(np.arctan2(curr_y, curr_x))-1) * np.pi))%360
+        force = haptic_force(5, min_distance, max_distance)
+        left_haptic, right_hatpic = haptic_feeback(5, angle, max_distance, min_distance)
+            
+        print("current angle", angle,"current distance", 5,
+                   "left haptic ",math.floor(left_haptic*scaleL),
+                   "right haptic", math.floor(right_hatpic*scaleR))
+        
+        if len(x_rms) < 10:
+            rms_x = np.sqrt(np.mean(np.sum(np.array(x_rms))))/ len(x_rms)
+            rms_y = np.sqrt(np.mean(np.sum(np.array(y_rms)))) / len(y_rms)
+            rms_z = np.sqrt(np.mean(np.sum(np.array(z_rms)))) / len(z_rms)
+        else:
+            rms_x = np.sqrt(np.mean(np.sum(np.array(x_rms))))/ len(x_rms)
+            rms_y = np.sqrt(np.mean(np.sum(np.array(y_rms)))) / len(y_rms)
+            rms_z = np.sqrt(np.mean(np.sum(np.array(z_rms)))) / len(z_rms)
+            # rms_x = np.sqrt(np.mean(np.array(x_rms[-10:])**2)) /10
+            # rms_y = np.sqrt(np.mean(np.array(y_rms[-10:])**2)) /10
+            # rms_z = np.sqrt(np.mean(np.array(z_rms[-10:])**2)) /10
+
+        print("x: %.2f" % rms_x, "y: %.2f" % rms_y, "z: %.2f" % rms_z)
+        
+        haptic.vibrate_both(intensityL=math.floor(left_haptic*scaleL), intensityR=math.floor(right_hatpic*scaleR))
+        sleep(0.8)
+        count += 1
+        if count%100 == 0:
+            print("current count", (count/100)*100, "%")
+        if count > 1000:
+            break
+
 
     while True:
         for x in range(0, len(rand_dst)):
@@ -142,19 +190,17 @@ if __name__ == "__main__":
                    "left haptic ",math.floor(left_haptic*scaleL),
                    "right haptic", math.floor(right_hatpic*scaleR))
             
-            if (rand_angle[x] > 160 and rand_angle[x] < 200):
-                print("vibrating pattern")
-                haptic.vibrate_pattern(left=math.floor(left_haptic*scaleL), right=math.floor(right_hatpic*scaleR), time=[0.3,0.2], count=5)
+            # if (rand_angle[x] > 160 and rand_angle[x] < 200):
+            #     print("vibrating pattern")
+            #     haptic.vibrate_pattern(left=math.floor(left_haptic*scaleL), right=math.floor(right_hatpic*scaleR), time=[0.2,0.3], count=5)
             
-            elif (rand_angle[x] > 340 or rand_angle[x] < 20):
-                haptic.vibrate_pattern(left=math.floor(left_haptic*scaleL), right=math.floor(right_hatpic*scaleR), time=[0.1,0.2], count=7)
+            # elif (rand_angle[x] > 340 or rand_angle[x] < 20):
+            #     haptic.vibrate_pattern(left=math.floor(left_haptic*scaleL), right=math.floor(right_hatpic*scaleR), time=[0.2,0.3], count=7)
             
-            else:
-                haptic.vibrate_both(intensityL=math.floor(left_haptic*scaleL), intensityR=math.floor(right_hatpic*scaleR))
+            # else:
+            haptic.vibrate_both(intensityL=math.floor(left_haptic*scaleL), intensityR=math.floor(right_hatpic*scaleR))
             
-            sleep(0.8)
-            haptic.reset_hacptic()
-            sleep(0.4)
+            sleep(0.5)
         break
     haptic.reset_hacptic()
     haptic.close()

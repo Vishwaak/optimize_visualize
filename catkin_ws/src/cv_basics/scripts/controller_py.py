@@ -29,7 +29,7 @@ class haptic_controller:
         if len(DualSenseController.enumerate_devices()) < 1:
             raise Exception('No DualSense Controller available.')
         
-        print("herllo")
+       
         self.controller = DualSenseController()
         # self.controller.activate()
 
@@ -42,6 +42,7 @@ class haptic_controller:
     def send_rumble(self, left_rumble, right_rumble):
         self.controller.left_rumble.set(left_rumble)
         self.controller.right_rumble.set(right_rumble)
+        self.controller.left_trigger.effect.machine(start_position=1,end_position=9,amplitude_a=2,amplitude_b=7,frequency=5,period=3) 
     
     def button_press(self):
         if self.controller.btn_cross.pressed:
@@ -54,25 +55,18 @@ class haptic_controller:
 
 if __name__ == '__main__':
     haptic = force_feedback(5, 10)
-    controller = haptic_controller()
+    controller1 = haptic_controller()
 
    
 
-    controller.activate()
+    controller1.activate()
     distance = 0
-   
+    # force = 0
     while True:
-        distance = distance + controller.button_press()
-        force, pattern = haptic.pattern_vibration(distance)
+        force = 500
+        controller1.send_rumble(force, force)
         print(distance)
-        if force > 0:
-            for i in range(len(pattern)):
-                print(distance)
-                controller.send_rumble(0, force)
-                print("current pattern: ", pattern[i], "current force: ", force)
-                sleep(pattern[i])
-       
-        sleep(0.01)
+        sleep(0.001)
       
         
         

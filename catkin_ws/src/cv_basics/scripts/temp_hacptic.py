@@ -13,7 +13,7 @@ class haptic_controller:
         self.ds.leftMotor = intensity
         self.ds.rightMotor = 0
     
-    def virbate_right(self, intensity=255):
+    def vibrate_right(self, intensity=255):
         self.ds.leftMotor = 0
         self.ds.rightMotor = intensity
     
@@ -40,6 +40,7 @@ class haptic_controller:
                 sleep(t)
             # print("current count", curr_count)
             curr_count += 1
+        # self.reset_hacptic()
 
     def reset_hacptic(self):
         self.ds.leftMotor = 0
@@ -54,4 +55,6 @@ class haptic_controller:
             return 255
          
         return value
-       
+    
+   
+               
