@@ -39,7 +39,7 @@ import pycuda.driver as cuda
 class InferenceNode:
     def __init__(self, flag="onnx"):
         rospy.init_node("inference_node")
-        self.subscriber = rospy.Subscriber("/img", Image, self.data_callback)
+        self.subscriber = rospy.Subscriber("/robot/front_rgbd_camera/rgb/image_raw", Image, self.data_callback)
         self.publisher = rospy.Publisher(
             "/seg_img", Image, queue_size=100, latch=True
         )
@@ -85,29 +85,30 @@ class InferenceNode:
         self.predict_prc = trt_infernce(
             "/home/developer/Desktop/tao/mask2former.engine"
         )
-        while self.running:
-            with lock:
-                print("data queue: ", data_queue.qsize())
-                if data_queue:
+        while not rospy.is_shutdown():
+            while self.running:
+                with lock:
+                    print("data queue: ", data_queue.qsize())
+                    if data_queue:
 
-                    input_data = data_queue.get()
+                        input_data = data_queue.get()
 
-                else:
-                    input_data = None
+                    else:
+                        input_data = None
 
-            if input_data is not None:
+                if input_data is not None:
 
-                input_image = self.bridge.imgmsg_to_cv2(input_data, "bgr8")
-                input_image = PILImage.fromarray(
-                    cv2.cvtColor(input_image, cv2.COLOR_BGR2RGB)
-                )
-                start = time.time()
-                class_logits, mask_logits = self.predict_prc.predict(input_image)
-                end = time.time()
-                # print(" ML time: ", end - start)
-                segment_queue.put([class_logits, mask_logits, input_image])
+                    input_image = self.bridge.imgmsg_to_cv2(input_data, "bgr8")
+                    input_image = PILImage.fromarray(
+                        cv2.cvtColor(input_image, cv2.COLOR_BGR2RGB)
+                    )
+                    start = time.time()
+                    class_logits, mask_logits = self.predict_prc.predict(input_image)
+                    end = time.time()
+                    # print(" ML time: ", end - start)
+                    segment_queue.put([class_logits, mask_logits, input_image])
 
-        ctx.pop()
+            ctx.pop()
 
     def run_visualization(self, segment_queue):
         # print("starting visualization thread")
