@@ -7,16 +7,16 @@ from multiprocessing import Queue
 from time import sleep
 
 import threading
-
+from kairos_laser.msg import obstacle
 
 class haptic_node:
     def __init__  (self):
         rospy.init_node('haptic_node', anonymous=True)
-        self.magnitude_data = rospy.Subscriber('/obstacle_distance', Float32, self.distance_callback)
+        self.magnitude_data = rospy.Subscriber('/obstacle_info', obstacle, self.distance_callback)
         self.haptic = haptic_controller()
-        self.rate = rospy.Rate(10)
-        self.min_dst = 40
-        self.max_dst = 70     
+        self.rate = rospy.Rate(100)
+        self.min_dst = 2
+        self.max_dst = 30     
         self.scaleL = 50
         self.scaleR = 255
         self.case = 2
@@ -53,7 +53,7 @@ class haptic_node:
     
     def haptic_feeback(self, distance, direction):
         force = self.haptic_force(distance)
-        print(force)
+        print("force :",force)
         left, right = self.directional(direction)
         right = right * force
         left = left * force
@@ -61,25 +61,27 @@ class haptic_node:
         return left, right
     
     def distance_callback(self, data):
-        distance = data.data
-        direction = 0
+        distance = data.distance.data
+        direction = data.direction.data
+        # print("distance", distance, "direction", direction)
         self.dst_dirc.put((distance, direction))
     
     def run_node(self, dst_dirc):
-        while True:
-            print("Here")
+        
+        while not rospy.is_shutdown():
             if not dst_dirc.empty():
                 dst, dirc = dst_dirc.get()
-                dst = dst * 100
-                print(dst)
+                dst = dst * 10
+                print("distance", dst, "direction", dirc)
                 left_haptic, right_haptic = self.haptic_feeback(dst, dirc)
+                print("left",left_haptic,"right",right_haptic)
                 print("left",left_haptic*self.scaleL,"right",right_haptic*self.scaleR)
                 self.haptic.vibrate_both(intensityL=math.floor(left_haptic*self.scaleL), intensityR=math.floor(right_haptic*self.scaleR))
-                print("I came here")
-                sleep(0.1)
+                # print("I came here")
+                sleep(0.03)
             else:
                 self.haptic.reset_hacptic()
-                sleep(0.1)
+                sleep(0.01)
             # haptic_controller.reset_hacptic()
         haptic_controller.close()
     
@@ -89,7 +91,6 @@ class haptic_node:
             
 
 if __name__ == '__main__':
-    print("hello2")
     node = haptic_node()
     try:
         node.start_node()
