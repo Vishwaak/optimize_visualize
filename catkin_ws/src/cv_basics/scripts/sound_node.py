@@ -1,16 +1,18 @@
 #! /usr/bin/python3
 import rospy
-import math
-from std_msgs.msg import Float32
-from temp_hacptic import haptic_controller
+
 from multiprocessing import Queue
 from time import sleep
 
-import threading
 from kairos_laser.msg import obstacle
+from cv_basics.msg import object_type
 
 import sounddevice as sd
 import soundfile as sf
+import os
+import threading
+
+from time import sleep
 
 class sound_node:
 
@@ -21,35 +23,79 @@ class sound_node:
         self.mid_dst = (self.min_dst + self.max_dst) / 2
         rospy.init_node('sound_node', anonymous=True)
         self.sound_dict ={
-            "near": "sound/near.wav",
-            "far": "sound/far.wav",
-            "left": "sound/left.wav",
-            "right": "sound/right.wav",
-            "front": "sound/front.wav",
-            "back": "sound/back.wav",
-            "obsatcle": "sound/obsatcle.wav",
-            "human": "sound/human.wav",
+            "near": "sounds/near.wav",
+            "far": "sounds/far.wav",
+            "left": "sounds/left.wav",
+            "right": "sounds/right.wav",
+            "front": "sounds/front.wav",
+            "back": "sounds/back.wav",
+            "box": "sounds/obstacle.wav",
+            "human": "sounds/human.wav",
         }
 
-        self.obsatcle_info = rospy.Subscriber('/obstacle_type', obstacle, self.play_sound)
+        self.obsatcle_type = rospy.Subscriber('/object_type', object_type, self.play_sound)
+        self.obstacle_info = rospy.Subscriber('/obstacle_info', obstacle, self.play_sound)
+
         self.rate = rospy.Rate(100) 
 
+        self.obs_info = None
+        self.obs_type = None
 
-    def choose_sound(self, data):
-        distance = data.distance.data  
-        obs_type = data.type.data
-        sounds_play = []
-        if distance < self.max_dst:
-            if self.min_dst < distance and distance > self.min_dst:
-                sounds_play.append(self.sound_dict["near"])
-            if self.max_dst > distance:
-                sounds_play.append(self.sound_dict["far"])
-            sounds_play.append(self.sound_dict[obs_type])
+        self.lock = threading.Lock()
+
+#info contains the distance
+#type contains the type of object
+
+    def play_sound(self, data):
+        with self.lock:
+            if isinstance(data, obstacle):
+                print("got obs info")
+                self.obs_info = data
+            elif isinstance(data, object_type):
+                print("got obs type")
+                self.obs_type= data
+
+            if self.obs_info and self.obs_type:
+                print("im here")
+                self.choose_sound(self.obs_info, self.obs_type)
+
             
-        for sounds in sounds_play:
-            filename = sounds
-            data, fs = sf.read(filename, dtype='float32')
-            sd.play(data, fs)
+
+    def choose_sound(self, obstacle_info, obstacle_type):
+
+        distance = obstacle_info.distance.data * 10 
+
+        print("Distance", distance)
+
+        if obstacle_type.human == True:
+            obs_type = "human"
+        elif obstacle_type.box == True:
+            obs_type = "box"
+        else:
+            obs_type = "none"
+        
+        sounds_play = []
+        
+        if distance < self.max_dst:
+            if self.min_dst < distance and distance < self.mid_dst:
+                sounds_play.append(self.sound_dict["near"])
+            elif self.mid_dst < distance:
+                sounds_play.append(self.sound_dict["far"])
+            if obs_type != "none":
+                sounds_play.append(self.sound_dict[obs_type])
+
+        print("Sounds to play", sounds_play)
+
+
+        if len(sounds_play) > 1:
+            for sounds in sounds_play:
+                filename = sounds
+                base_path = os.path.dirname(os.path.abspath(__file__))
+                filename = os.path.join(base_path, filename)
+                data, fs = sf.read(filename, dtype='float32')
+                print("Playing sound")
+                sd.play(data, fs)
+                sleep(0.9)
 
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@ from time import sleep
 import threading
 from kairos_laser.msg import obstacle
 
+
 class haptic_node:
     def __init__  (self):
         rospy.init_node('haptic_node', anonymous=True)
