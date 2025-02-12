@@ -4,10 +4,6 @@ import tensorrt as trt
 import cv2
 import torch
 
-
-from multiprocessing import Queue
-
-
 from transformers.models.mask2former.modeling_mask2former import Mask2FormerForUniversalSegmentationOutput
 from transformers import AutoImageProcessor
 from predict_utils import post_process_semantic_segmentation1, ade_palette
@@ -114,7 +110,7 @@ class SegmentVisual:
 
     def __init__(self):
         self.palette = ade_palette()
-        self.selected_labels = [3,12]
+        self.selected_labels = [3,12,42]
         pass
     
     
@@ -138,13 +134,15 @@ class SegmentVisual:
 
         
         img = np.array(image) * 0.5 + color_segmentation_map[..., ::-1] * 0.5
+
+        object_type = {12: 1 if 12 in seg_image else 0, 42: 1 if 42 in seg_image else 0}
         
-        return img.astype(np.uint8), poly_seg.astype(np.uint8)
+        return img.astype(np.uint8), object_type
 
     def poly_visual(self, seg_img, image):
 
         poly_images = []
-        epsilon_const = {3: 0.01, 12: 0.007}
+        epsilon_const = {3: 0.01, 12: 0.007, 42: 0.01}
 
         for label in self.selected_labels:
             binary_mask = np.where(seg_img == label, 255, 0).astype(np.uint8)
@@ -159,14 +157,12 @@ class SegmentVisual:
 
                 poly_images.append(cv2.fillPoly(np.zeros_like(image), polygons, self.palette[label]))
 
-        if len(poly_images) == 2:
-            result = cv2.addWeighted(poly_images[0],1,poly_images[1],1,0)
-        elif len(poly_images) == 1:
-            result =  np.array(poly_images[0], dtype=np.uint8)
-        else:
-            result = np.zeros_like(image)
-        
-        result[np.all(result == [0, 0, 0], axis=-1)] = [0, 255, 255]
-
-        return result
-        
+                if len(poly_images) == 3:
+                    result = cv2.addWeighted(cv2.addWeighted(poly_images[0],1,poly_images[1],1,0),1,poly_images[2],1,0)
+                if len(poly_images) == 2:
+                    result = cv2.addWeighted(poly_images[0],1,poly_images[1],1,0)
+                elif len(poly_images) == 1:
+                    result =  np.array(poly_images[0], dtype=np.uint8)
+                else:
+                    result =  np.zeros_like(image)
+                output_queue.put(result)
