@@ -171,9 +171,14 @@ class onnx_infernce:
         ort_inputs = {"pixel_values": inputs["pixel_values"].cpu().detach().numpy()}
         return ort_inputs
 
-    def load_(self):
+    def load_(self, load_model=True):
         image_processor = AutoImageProcessor.from_pretrained("facebook/mask2former-swin-tiny-ade-semantic")
-        model = ort.InferenceSession("mask2former.onnx", providers=["CUDAExecutionProvider"])
+        
+        if load_model:
+            model = ort.InferenceSession("mask2former.onnx", providers=["CUDAExecutionProvider"])
+        else:
+            model = None
+
         return model, image_processor
     
     def predict(self, inputs):
@@ -239,13 +244,13 @@ class Visualizer:
         outside_palette_labels = [label for label in sel_lables if label >= palette_len]
 
         for label in within_palette_labels:
-            cp.copyto(color_segmentation_map, cp.asarray(self.palette[label]), where=(seg_image == label)[..., None])
+            color_segmentation_map[seg_image == label, :] = self.palette[label]
+         
 
         for label in outside_palette_labels:
-            cp.copyto(color_segmentation_map, cp.asarray(default_color), where=(seg_image == label)[..., None])
+            color_segmentation_map[seg_image == label, :] = default_color
 
-        color_segmentation_map = cp.asnumpy(color_segmentation_map)
-
+        
         # for label in sel_lables:
         #     if label < palette_len:
         #         color_segmentation_map[seg_image == label, :] = self.palette[label]

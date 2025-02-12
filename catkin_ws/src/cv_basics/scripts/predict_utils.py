@@ -57,3 +57,13 @@ def post_process_semantic_segmentation1(outputs, target_sizes: Optional[List[Tup
             semantic_segmentation = [semantic_segmentation[i] for i in range(semantic_segmentation.shape[0])]
 
         return semantic_segmentation
+
+def ade_palette():
+    # Define the ADE20K palette
+        return [
+                (250,250,250), (250,250,250),(250,250,250),(0,250,0),(250,250,250),
+                (250,250,250), (250,250,250),(250,250,250),(250,250,250),(250,250,250),
+                (250,250,250),(250,250,250),(0,0,250)
+                    # Add more colors as needed
+        ]
+    
