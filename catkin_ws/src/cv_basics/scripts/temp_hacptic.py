@@ -36,7 +36,7 @@ class haptic_controller:
                 if index%2 == 0:
                     self.vibrate_left(left)
                 else:
-                    self.virbate_right(right)
+                    self.vibrate_right(right)
                 sleep(t)
             # print("current count", curr_count)
             curr_count += 1

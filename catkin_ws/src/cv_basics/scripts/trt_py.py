@@ -5,7 +5,7 @@ import cv2
 import torch
 
 
-from multiprocessing import Queue
+
 
 
 from transformers.models.mask2former.modeling_mask2former import Mask2FormerForUniversalSegmentationOutput
@@ -114,7 +114,7 @@ class SegmentVisual:
 
     def __init__(self):
         self.palette = ade_palette()
-        self.selected_labels = [3,12]
+        self.selected_labels = [3,12,42]
         pass
     
     
@@ -135,13 +135,15 @@ class SegmentVisual:
             color_segmentation_map[seg_image == label, :] = self.palette[label]
         
         img = np.array(image) * 0.5 + color_segmentation_map[..., ::-1] * 0.5
+
+        object_type = {12: 1 if 12 in seg_image else 0, 42: 1 if 42 in seg_image else 0}
         
-        return img.astype(np.uint8)
+        return img.astype(np.uint8), object_type
 
     def poly_visual(self, poly_queue, output_queue):
 
         poly_images = []
-        epsilon_const = {3: 0.01, 12: 0.007}
+        epsilon_const = {3: 0.01, 12: 0.007, 42: 0.01}
 
         while True:
        
@@ -161,6 +163,8 @@ class SegmentVisual:
 
                         poly_images.append(cv2.fillPoly(np.zeros_like(image), polygons, self.palette[label]))
 
+                if len(poly_images) == 3:
+                    result = cv2.addWeighted(cv2.addWeighted(poly_images[0],1,poly_images[1],1,0),1,poly_images[2],1,0)
                 if len(poly_images) == 2:
                     result = cv2.addWeighted(poly_images[0],1,poly_images[1],1,0)
                 elif len(poly_images) == 1:

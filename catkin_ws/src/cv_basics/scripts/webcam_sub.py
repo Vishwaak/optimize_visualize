@@ -15,12 +15,10 @@ import cv2
 
 # from seg_models import model_inference
 
-from seg_models import onnx_infernce
-from seg_models import Visualizer
 
 from PIL import Image as PILImage
 
-import numpy as np
+
 
 from multiprocessing import Queue
 
@@ -32,6 +30,8 @@ from trt_py import trt_infernce, SegmentVisual
 
 import pycuda.driver as cuda
 
+from cv_basics.msg import object_type
+
 # Publisher and Subscriber
 # robot/front_rgbd_camera/rgb/image_raw
 
@@ -39,13 +39,16 @@ import pycuda.driver as cuda
 class InferenceNode:
     def __init__(self, flag="onnx"):
         rospy.init_node("inference_node")
-        self.subscriber = rospy.Subscriber("/img", Image, self.data_callback)
+        self.subscriber = rospy.Subscriber("/robot/front_rgbd_camera/rgb/image_raw", Image, self.data_callback)
         self.publisher = rospy.Publisher(
             "/seg_img", Image, queue_size=100, latch=True
         )
         self.poly_publisher = rospy.Publisher(
            "/poly_img", Image, queue_size=100, latch=True
          )
+        self.object_type = rospy.Publisher(
+            "/object_type", object_type, queue_size=100, latch=True
+        )
         self.bridge = CvBridge()
 
         self.data_queue = Queue()
@@ -122,9 +125,14 @@ class InferenceNode:
 
                 seg, mask, img = segment_queue.get()
                 start = time.time()
-                seg_img = self.visual_output.segment_visual(seg, mask, img, self.poly_queue)
-                seg_vis = cv2.cvtColor(seg_img, cv2.COLOR_RGB2BGR)
+                seg_img, object_type_ = self.visual_output.segment_visual(seg, mask, img, self.poly_queue)
 
+                object_type_msg = object_type()
+                object_type_msg.human = object_type_[12]
+                object_type_msg.box = object_type_[42]
+                self.object_type.publish(object_type_msg)
+                
+                seg_vis = cv2.cvtColor(seg_img, cv2.COLOR_RGB2BGR)
                 end = time.time()
 
                 processing_time = end - start

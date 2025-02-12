@@ -9,39 +9,64 @@ from time import sleep
 import threading
 from kairos_laser.msg import obstacle
 
+
 class haptic_node:
     def __init__  (self):
         rospy.init_node('haptic_node', anonymous=True)
-        self.magnitude_data = rospy.Subscriber('/obstacle_info', obstacle, self.distance_callback)
         self.haptic = haptic_controller()
         self.rate = rospy.Rate(100)
-        self.min_dst = 2
-        self.max_dst = 30     
+
+        self.force_step = 1
+        self.min_dst = 7
+        self.max_dst =  15   
         self.scaleL = 50
         self.scaleR = 255
-        self.case = 2
+        self.force_func = 2
 
-        self.dst_dirc = Queue()
+        # self.dst_dirc = Queue()
 
-        self.haptic_thread = threading.Thread(target=self.run_node, args=(self.dst_dirc,))
+        
+
+        self.haptic_direction = "vib" #vib or braille
+        self.curr_dst = 0.0
+        self.dirc = 0.0
+
+        self.magnitude_data = rospy.Subscriber('/obstacle_info', obstacle, self.distance_callback, queue_size=1)
+        self.haptic_thread = threading.Thread(target=self.run_node)
+    def norm_x(self, x):
+        norm = self.max_dst - self.min_dst
+        x = ((self.max_dst - x) / norm)
+        return x
     
     def haptic_force(self, x):
+        if self.force_func == 1:
+            slope = -1 / (self.max_dst - self.min_dst)
+            y  = slope * (x - self.min_dst) + 1
+            return y
+        elif self.force_func == 2:
+            y = self.norm_x(x)**2
+            return y
+
+        elif self.force_func ==3:
+            x = self.norm_x(x)
+            y = 1/math.exp((x**2)*math.pi)
+            return y
+
+        elif self.force_func == 4:
+            x =  self.norm_x(x)
+            y = -1 * math.log10(x)
+            return y
+   
+
+    def get_force(self, x):
         if x < self.min_dst:
             return 0
         elif x > self.max_dst:
             return 0
-        if self.case == 1:
-            slope = -1 / (self.max_dst - self.min_dst)
-            y  = slope * (x - self.min_dst) + 1
-            return y
-        elif self.case == 2:
-            norm = self.max_dst - self.min_dst
-            y = ((self.max_dst - x) / norm)**2
-            return y
+        else:
+            force = self.haptic_force(x)
 
-        elif self.case ==3:
-            y = 1/math.exp((x**2)*math.pi)
-            return y
+        return max(0,force) if force < 1 else 1
     
     def directional(self, angle):
         
@@ -52,9 +77,13 @@ class haptic_node:
     
     
     def haptic_feeback(self, distance, direction):
-        force = self.haptic_force(distance)
+        force = self.get_force(distance)
         print("force :",force)
-        left, right = self.directional(direction)
+        if self.haptic_direction == "vib":
+            left, right = self.directional(direction)
+        else:
+            return force, force
+        
         right = right * force
         left = left * force
 
@@ -63,26 +92,58 @@ class haptic_node:
     def distance_callback(self, data):
         distance = data.distance.data
         direction = data.direction.data
-        # print("distance", distance, "direction", direction)
-        self.dst_dirc.put((distance, direction))
+        header  =  data.header
+        # print("data", data)
+        distance = distance * 10
+       
+        if self.max_dst > distance and distance > self.min_dst:
+          
+            self.curr_dst = distance
+            self.dirc = direction
+        else:
+            self.curr_dst = 0
+            self.dirc = 0
+            # selself.haptic_thread = threading.Thread(target=self.run_node, args=(self.curr_dst,self.dirc))f.dst_dirc.put((distance, direction, header))
     
-    def run_node(self, dst_dirc):
+    def vibrate_pattern(self, forceR, forceL, dir):
+        
+        if dir > 270 and dir <= 360:
+            self.haptic.vibrate_pattern(left=forceL, right=forceR,time=[0.09,0.09], count=1)
+        if dir >= 0 and dir <= 90:
+            self.haptic.vibrate_pattern(left=forceL, right=forceR,time=[0.09,0.09], count=1)
+            self.haptic.vibrate_pattern(left=0, right=forceR,time=[0.09], count=1)
+            self.haptic.vibrate_pattern(left=forceL, right=forceR,time=[0.09], count=1)
+        if dir > 90 and dir <= 180:
+            self.haptic.vibrate_pattern(left=forceL, right=forceR,time=[0.09,0.09], count=1)
+        if dir > 180 and dir <= 270:
+            self.haptic.vibrate_pattern(left=forceL, right=forceR,time=[0.09,0.09, 0.09], count=1)
+    
+    def run_node(self):
         
         while not rospy.is_shutdown():
-            if not dst_dirc.empty():
-                dst, dirc = dst_dirc.get()
-                dst = dst * 10
-                print("distance", dst, "direction", dirc)
-                left_haptic, right_haptic = self.haptic_feeback(dst, dirc)
-                print("left",left_haptic,"right",right_haptic)
-                print("left",left_haptic*self.scaleL,"right",right_haptic*self.scaleR)
+            # dst, dirc, header = dst_dirc.get()
+            dst = self.curr_dst
+            dirc = self.dirc
+            
+            print("distance", dst, "direction", dirc)
+
+            left_haptic, right_haptic = self.haptic_feeback(dst, dirc)
+            
+            print("left",left_haptic*self.scaleL,"right",right_haptic*self.scaleR)
+
+            if self.haptic_direction == "vib":
                 self.haptic.vibrate_both(intensityL=math.floor(left_haptic*self.scaleL), intensityR=math.floor(right_haptic*self.scaleR))
-                # print("I came here")
-                sleep(0.03)
             else:
-                self.haptic.reset_hacptic()
-                sleep(0.01)
-            # haptic_controller.reset_hacptic()
+                self.vibrate_pattern(math.floor(left_haptic*self.scaleL), math.floor(right_haptic*self.scaleR), dirc)
+            
+            sleep(0.03)
+
+            # if dst < self.max_dst and self.min_dst < dst:
+            #     sleep(0.03) #0.03
+            # else:
+            #     self.haptic.reset_hacptic()
+            #     sleep(0.01)
+                
         haptic_controller.close()
     
     def start_node(self):
