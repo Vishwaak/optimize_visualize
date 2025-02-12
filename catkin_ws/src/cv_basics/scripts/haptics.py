@@ -21,6 +21,8 @@ def haptic_force(x, min_distnace, max_distance, case=2):
     elif case ==3:
         y = 1/math.exp((x**2)*math.pi)
         return y
+    
+   
 
 def directional(angle):
     input_angle = math.radians(angle)
