@@ -6,9 +6,9 @@ from sensor_msgs.msg import Image
 from cv_basics.msg import poly
 
 from trt_py import SegmentVisual
-from cv_bridge import CvBridge, CvBridgeError
+from cv_bridge import CvBridge
 
-import cv2
+
 
 class polyNode:
     def __init__(self):
@@ -33,12 +33,10 @@ class polyNode:
                 seg_img = self.bridge.imgmsg_to_cv2(data.segment_image)
                 image = self.bridge.imgmsg_to_cv2(data.frame)
                 poly_image = self.visual_output.poly_visual(seg_img, image)
-                print(poly_image)
                 # poly_vis = cv2.cvtColor(poly_image, cv2.COLOR_RGB2BGR)
                 poly_vis = self.bridge.cv2_to_imgmsg(poly_image, "bgr8")
                 self.poly_publisher.publish(poly_vis)
-            else:
-                print("no data")
+            
         print("shutting down")
 
 if __name__ == "__main__":

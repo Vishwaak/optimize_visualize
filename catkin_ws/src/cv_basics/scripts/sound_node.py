@@ -14,13 +14,14 @@ import threading
 
 from time import sleep
 
+import math
 
 class sound_node:
 
     def __init__(self):
 
         self.min_dst = 2
-        self.max_dst = 30
+        self.max_dst = 15
         self.mid_dst = (self.min_dst + self.max_dst) / 2
         rospy.init_node("sound_node", anonymous=True)
         self.sound_dict = {
@@ -34,11 +35,11 @@ class sound_node:
             "human": "sounds/human.wav",
         }
 
-        self.obsatcle_type = rospy.Subscriber(
-            "/object_type", object_type, self.play_sound
-        )
+        # self.obsatcle_type = rospy.Subscriber(
+        #     "/object_type", object_type, self.play_sound, queue_size=1
+        # )
         self.obstacle_info = rospy.Subscriber(
-            "/obstacle_info", obstacle, self.play_sound
+            "/obstacle_info", obstacle, self.play_sound, queue_size=1
         )
 
         self.rate = rospy.Rate(100)
@@ -52,50 +53,63 @@ class sound_node:
     # type contains the type of object
 
     def refresh_rate(self, x):
-        limit = ((x - self.min_dst) / (self.max_dst - self.min_dst)) * 100
-        if limit < 25:
-            return 0.9
-        elif limit < 50:
-            return 1.5
-        elif limit < 75:
-            return 2
-        else:
-            return 2
+        
 
+        norm = self.max_dst - self.min_dst
+        x = 1 - (x - self.min_dst) / norm
+        func = round(1/math.exp((x**2) * math.pi),1)
+
+        if func < 0.3:
+            return 0.3
+        elif func > 1:
+            return 1
+        else:
+            return func
+        
     def play_sound(self, data):
         with self.lock:
             if isinstance(data, obstacle):
                 self.obs_info = data
-            elif isinstance(data, object_type):
-                self.obs_type = data
-            if self.obs_info and self.obs_type:
-                self.choose_sound(self.obs_info, self.obs_type)
-
+            # elif isinstance(data, object_type):
+            #     self.obs_type = data
+            if self.obs_info :
+                curr_distance = self.obs_info.distance.data
+                if curr_distance < self.max_dst and curr_distance > 0:
+                    self.choose_sound(self.obs_info)
+    
     def get_dir_sound(self, direction):
-        if direction > 180 and direction <= 270:
-            return self.sound_dict["back"]
-        elif direction > 90 and direction <= 180:
-            return self.sound_dict["right"]
-        elif direction > 0 and direction <= 90:
-            return self.sound_dict["front"]
-        elif direction > 270 and direction <= 360:
-            return self.sound_dict["left"]
-        else:
-            return None
 
-    def choose_sound(self, obstacle_info, obstacle_type):
+        dir_lr = math.cos(math.radians(direction))
+        dir_fb = math.sin(math.radians(direction))
+        direction = []
+
+        if dir_lr > 0:
+            direction.append(self.sound_dict["right"])
+        else:
+            direction.append(self.sound_dict["left"])
+        
+        if dir_fb > 0:
+            direction.append(self.sound_dict["front"])
+        else:
+            direction.append(self.sound_dict["back"])
+        
+        return direction
+    
+   
+
+    def choose_sound(self, obstacle_info):
 
         distance = obstacle_info.distance.data * 10
         direction = obstacle_info.direction.data
 
         print("Distance", distance)
 
-        if obstacle_type.human == True:
-            obs_type = "human"
-        elif obstacle_type.box == True:
-            obs_type = "box"
-        else:
-            obs_type = "none"
+        # if obstacle_type.human == True:
+        #     obs_type = "human"
+        # elif obstacle_type.box == True:
+        #     obs_type = "box"
+        # else:
+        #     obs_type = "none"
 
         sounds_play = []
 
@@ -109,13 +123,13 @@ class sound_node:
         # TODO: set common parameters
 
         if distance < self.max_dst:
-            if self.min_dst < distance and distance < self.mid_dst:
+            if distance < self.mid_dst:
                 sounds_play.append(self.sound_dict["near"])
             elif self.mid_dst < distance:
                 sounds_play.append(self.sound_dict["far"])
-            if obs_type != "none":
-                sounds_play.append(self.get_dir_sound(direction))
-                sounds_play.append(self.sound_dict[obs_type])
+           
+            sounds_play.extend(self.get_dir_sound(direction))
+            sounds_play.append(self.sound_dict["box"])
 
         print("Sounds to play", sounds_play)
 
@@ -127,6 +141,7 @@ class sound_node:
                 data, fs = sf.read(filename, dtype="float32")
                 print("Playing sound")
                 sd.play(data, fs)
+                print("current refesh rate", self.refresh_rate(distance))
                 sleep(self.refresh_rate(distance))
 
 

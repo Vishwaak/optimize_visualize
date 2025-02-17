@@ -34,6 +34,7 @@ import pycuda.driver as cuda
 
 from cv_basics.msg import object_type
 
+import numpy as np
 # Publisher and Subscriber
 # robot/front_rgbd_camera/rgb/image_raw
 
@@ -49,7 +50,7 @@ class InferenceNode:
            "/poly_pre", poly, queue_size=100, latch=True
          )
         self.object_type = rospy.Publisher(
-            "/object_type", object_type, queue_size=100, latch=True
+            "/object_type", object_type, queue_size=1, latch=True
         )
         self.bridge = CvBridge()
 
@@ -128,7 +129,7 @@ class InferenceNode:
 
                 seg, mask, img = segment_queue.get()
                 start = time.time()
-                seg_img, object_type_ = self.visual_output.segment_visual(seg, mask, img, self.poly_queue)
+                seg_img, poly_seg, object_type_ = self.visual_output.segment_visual(seg, mask, img)
 
                 object_type_msg = object_type()
                 object_type_msg.human = object_type_[12]

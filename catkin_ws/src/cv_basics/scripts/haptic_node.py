@@ -1,4 +1,5 @@
 #! /usr/bin/python3
+    
 import rospy
 import math
 from std_msgs.msg import Float32
@@ -16,16 +17,17 @@ class haptic_node:
         self.haptic = haptic_controller()
         self.rate = rospy.Rate(100)
 
-        self.force_step = 1
+        self.force_step = 2
         self.min_dst = 7
         self.max_dst = 15
         self.scaleL = 50
         self.scaleR = 255
-        self.force_func = 2
+        self.force_func = 4
 
         self.haptic_direction = "vib"  # vib or braille
         self.curr_dst = 0.0
         self.dirc = 0.0
+        self.alpha = 1
 
         self.magnitude_data = rospy.Subscriber(
             "/obstacle_info", obstacle, self.distance_callback, queue_size=1
@@ -43,16 +45,16 @@ class haptic_node:
             y = slope * (x - self.min_dst) + 1
             return y
         elif self.force_func == 2:
-            y = self.norm_x(x) ** 2
+            y = self.alpha*self.norm_x(x) ** 2
             return y
 
         elif self.force_func == 3:
-            x = self.norm_x(x)
-            y = 1 / math.exp((x**2) * math.pi)
+            x = 1 - self.norm_x(x)
+            y = 1 / math.exp(self.alpha*(x**2) * math.pi)
             return y
 
         elif self.force_func == 4:
-            x = self.norm_x(x)
+            x = 1 - self.norm_x(x)
             y = -1 * math.log10(x)
             return y
 
@@ -92,7 +94,7 @@ class haptic_node:
 
         distance = distance * 10
 
-        if self.max_dst > distance and distance > self.min_dst:
+        if self.max_dst > distance:
 
             self.curr_dst = distance
             self.dirc = direction
