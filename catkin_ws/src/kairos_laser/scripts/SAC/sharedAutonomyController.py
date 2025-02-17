@@ -27,7 +27,7 @@ from sensor_msgs.msg import Joy
 from sensor_msgs import point_cloud2
 from kairos_laser.msg import obstacle
 from copy import deepcopy
-from secondlaser import LaserTransformer as lt
+from secondlaser import LaserTransformer
 
 
 #-------------------------------------------------------------------------------------------------
@@ -57,9 +57,10 @@ K_REP = 0.8
 #   Class Definitions
 #-------------------------------------------------------------------------------------------------
 
-class SharedAutonomyController:
+class SharedAutonomyController(LaserTransformer):
     #------------------------------------ CLASS CONSTRUCTOR --------------------------------------
     def __init__(self):
+        super().__init__()
         rospy.init_node('shared_autonomy_controller_node', anonymous=True)                       # Initializing a ROS node
         self.front_pcld2_pub = rospy.Publisher('/front_transformed_pcld2', PointCloud2, queue_size=10) # Creating a ROS Publisher for pointCloud of the subscribed and transformed front laserScan points
         self.rear_pcld2_pub = rospy.Publisher('/rear_transformed_pcld2', PointCloud2, queue_size=10)  # Creating a ROS Publisher for pointCloud of the subscribed and transformed rear laserScan points
@@ -74,7 +75,7 @@ class SharedAutonomyController:
         self.vfinal_joy_pub = rospy.Publisher('/robot/joy', Joy, queue_size=10)                  # Creating a ROS Publisher for the final velocity signal joy message
         self.obstacle_info = rospy.Publisher('/obstacle_info', obstacle, queue_size=1)    # Creating a ROS Publisher for the direction of the closest obstacle
         self.scan_header = Header()                                                             # Creating a Header object for the LaserScan messages
-        self.front_minAngle = 0                             # unit: radian
+        '''self.front_minAngle = 0                             # unit: radian
         self.front_maxAngle = 0                             # unit: radian
         self.front_angIncrement = 0                         # unit: radian
         self.front_minRange = 0                             # unit: meters
@@ -89,7 +90,7 @@ class SharedAutonomyController:
         self.rear_maxRange = 0                              # unit: meters 
         self.rear_ranges = []                               # unit: meters
         self.rear_FoV = 0                                   # unit: count
-        self.rear_noOfScans = 0                             # unit: meters
+        self.rear_noOfScans = 0                             # unit: meters'''
         self.scan_threshold_range = 5                       # unit: meters
         self.marker_threshold_range = 2.0                   # unit: meters
         self.rho_0 = 1.5                                    # unit: meters
@@ -97,8 +98,8 @@ class SharedAutonomyController:
         self.loop_frequency = 250                           # unit: hertz
         self.marker_lifetime = 1/self.loop_frequency        # uint: seconds
         self.k_rep = K_REP                                  # unit: repulsive field constant     ...use for no normalization
-        self.base_r_values = []                             # Polar coordinate - r values of LaserScan points that are transformed from "robot_front_laser_link" to "robot_base_link" 
-        self.base_theta_values = []                         # Polar coordinate - theta values of the transformed LaserScan points from "robot_front_laser_link" to "robot_base_link"
+        # self.base_r_values = []                             # Polar coordinate - r values of LaserScan points that are transformed from "robot_front_laser_link" to "robot_base_link" 
+        # self.base_theta_values = []                         # Polar coordinate - theta values of the transformed LaserScan points from "robot_front_laser_link" to "robot_base_link"
         self.roi1_ranges = []                               # LaserScan ranges[] for the ROI#1 of all sub-threshold obstacles captured in one LIDAR scan. Re-initialized in publish_obstacles()
         self.roi2_ranges = []                               # LaserScan ranges[] for the ROI#2 of all sub-threshold obstacles captured in one LIDAR scan. Re-initialized in publish_obstacles()
         self.centroids = []                                 # List of centroids of obstacles detected in a single LIDAR scan
@@ -610,15 +611,15 @@ class SharedAutonomyController:
         
     # ROS Publisher function to publish Marker line strips on thresholded obstacles (to be coded into a separate .py file)
     def publish_obstacles(self):
-        self.roi1_ranges = [5.5] * len(lt.base_r_values)                  # This list will hold the laserScan ranges[] for the ROI of all obstacles captured in one LIDAR scan
-        self.roi2_ranges = [6.0] * len(lt.base_r_values)                  # Re-initialize all elements of roi1_ranges[] with the ceiling value for the next LIDAR scan                                               
+        self.roi1_ranges = [5.5] * len(self.base_r_values)                  # This list will hold the laserScan ranges[] for the ROI of all obstacles captured in one LIDAR scan
+        self.roi2_ranges = [6.0] * len(self.base_r_values)                  # Re-initialize all elements of roi1_ranges[] with the ceiling value for the next LIDAR scan                                               
         points = []                                                         # This list will hold the set of points that form a sub-threshold obstacle
         markerNumber = 0                                                    
-        for j in range(len(lt.base_r_values)):                            # :: LOOP START :: For each ranges element in the subscribed LaserScan message -- 
-            if lt.base_r_values[j] < self.marker_threshold_range:         # -- CONDITION: is range element sub-threshold? 
-                r = lt.base_r_values[j]                                   #  - TRUE: -- convert element coordinates from Polar to Cartesian
+        for j in range(len(self.base_r_values)):                            # :: LOOP START :: For each ranges element in the subscribed LaserScan message -- 
+            if self.base_r_values[j] < self.marker_threshold_range:         # -- CONDITION: is range element sub-threshold? 
+                r = self.base_r_values[j]                                   #  - TRUE: -- convert element coordinates from Polar to Cartesian
                 #theta = self.getAngle(j)                                    #          -- add cartesian point to points[]
-                theta = lt.base_theta_values[j]
+                theta = self.base_theta_values[j]
                 marker_point = Point()
                 marker_point.x = r * np.cos(theta)
                 marker_point.y = r * np.sin(theta)
@@ -705,12 +706,13 @@ if __name__ == '__main__':
         rospy.Subscriber('/robot/rear_laser/scan_filtered', LaserScan, sac.rearScan_callback)
         rospy.Subscriber('/joy_ps5', Joy, sac.joy_bs_callback)
         #sac.displayLaserSpecs()
+        # lt = LaserTransformer()
         loopRate = rospy.Rate(sac.loop_frequency)                           # Loop rate frequency (25 Hz)
         while not rospy.is_shutdown():
             # sac.displayLaserSpecs()
             # sac.publish_front_transformed_pointCloud()                      # To publish a pointCloud of the subscribed Front LIDAR laserScan points, transformed to the "robot_base_link"
             # sac.publish_rear_transformed_pointCloud()                      # To publish a pointCloud of the subscribed Rear LIDAR laserScan points, transformed to the "robot_base_link"
-            lt.publish_merged_transformed_pointCloud()                      
+            sac.publish_merged_transformed_pointCloud()                     
             sac.publish_obstacles()                                         # To publish obstacle markers over a thresholded laserScan data
             sac.publish_centroids()                                         # To publish the centroids of the visible thresholded obstacles
             sac.publish_roi1()                                              # One LIDAR Scan complete. Publish ROI#1 for obstacles captured in this scan
@@ -725,8 +727,8 @@ if __name__ == '__main__':
             #print(f"y_linear (JOY) = {sac.ref_signal.y}")
             #print(f"x_linear (SAC) = {vfinal_signal.x}")
             #print(f"y_linear (SAC) = {vfinal_signal.y}")
-            lt.base_r_values = []                                          # Re-initialize the base_r_values[] list to "empty" for the next LIDAR scan
-            lt.base_theta_values = []                                      # Re-initilaize the base_theta_values[] list to "empty" for the next LIDAR scan 
+            sac.base_r_values = []                                          # Re-initialize the base_r_values[] list to "empty" for the next LIDAR scan
+            sac.base_theta_values = []                                      # Re-initilaize the base_theta_values[] list to "empty" for the next LIDAR scan 
             sac.centroids = []                                              # Re-initialize the centroids[] list to "empty" for the next LIDAR scan
             print("++++====================")
             print(sac.closestPoints)

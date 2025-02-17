@@ -32,7 +32,7 @@ from sensor_msgs import point_cloud2
 class LaserTransformer:
     #------------------------------------ CLASS CONSTRUCTOR --------------------------------------
     def __init__(self):
-        rospy.init_node('second_laser_analysis_node', anonymous=True)                      
+        rospy.init_node('laser_transformer_node', anonymous=True)                      
         self.front_pcld2_pub = rospy.Publisher('/front_transformed_pcld2', PointCloud2, queue_size=10) 
         self.rear_pcld2_pub = rospy.Publisher('/rear_transformed_pcld2', PointCloud2, queue_size=10)
         self.merged_pcld2_pub = rospy.Publisher('/merged_transformed_pcld2', PointCloud2, queue_size=10)
@@ -179,6 +179,7 @@ class LaserTransformer:
         header.frame_id = "robot_base_link"
         pcld2_msg = point_cloud2.create_cloud_xyz32(header, self.merged_pointcould)
         self.merged_pcld2_pub.publish(pcld2_msg)
+        return
 
 #-------------------------------------------------------------------------------------------------
 #   Main Function
@@ -189,6 +190,12 @@ if __name__ == '__main__':
         lt = LaserTransformer()
         rospy.Subscriber('/robot/front_laser/scan_filtered', LaserScan, lt.frontScan_callback)
         rospy.Subscriber('/robot/rear_laser/scan_filtered', LaserScan, lt.rearScan_callback)
+        '''lt.get_front_transformed_pointCloud()
+        lt.get_rear_transformed_pointCloud()
+        lt.publish_merged_transformed_pointCloud()
+        lt.base_r_values = []
+        lt.base_theta_values = []
+        lt.merged_pointcould =[]'''
         loopRate = rospy.Rate(lt.loop_frequency)             # Loop rate frequency (250 Hz)
         while not rospy.is_shutdown():
             lt.get_front_transformed_pointCloud()       
