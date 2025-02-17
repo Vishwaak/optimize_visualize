@@ -1,8 +1,8 @@
 #! /usr/bin/env python3
 
 #-------------------------------------------------------------------------------------------------
-#   @file       : sharedAutonomyController_v16.py
-#   @author     : PARAM D SALUNKHE | T VISHWAAK CHANDRAN | UTARI - AIS
+#   @file       : secondlaser.py
+#   @authors    : PARAM D SALUNKHE | T VISHWAAK CHANDRAN | UTARI - AIS
 #   @comments   : 
 #-------------------------------------------------------------------------------------------------
  
