@@ -145,11 +145,11 @@ class filter_point_cloud:
         filtered_cloud_lowes2 = self.call_filter(filtered_cloud, "lowes2")
 
         
-
+        overlap_points = np.concatenate((filtered_cloud["overlap_left"], filtered_cloud["overlap_right"]), axis=0)
         if self.plot_counter % 1000 == 0:
             self.save_points(
-                [filtered_cloud_median, filtered_cloud["overlap_left"],filtered_cloud_lowes2],
-                ["median_points", "overlap_left","lowes_points"]
+                [filtered_cloud_median, overlap_points,filtered_cloud_lowes2],
+                ["median_points", "overlap_points","lowes_points"]
                 )
             self.plot_counter = 1
         else:
@@ -160,8 +160,15 @@ class filter_point_cloud:
         header.stamp = rospy.Time.now()
         header.frame_id = "robot_base_link"
 
-        pcl2_msg_m =  point_cloud2.create_cloud_xyz32(header, filtered_cloud_median)
-        pcl2_msg_i =  point_cloud2.create_cloud_xyz32(header, filtered_cloud_median)
+     
+
+        final_points_median = np.concatenate((filtered_cloud_median, filtered_cloud["non_overlap"]), axis=0) 
+        filtered_cloud_lowes2= np.pad(filtered_cloud_lowes2, ((0, 0), (0, 1)), mode='constant', constant_values=filtered_cloud["non_overlap"][0][2])
+        final_points_lowes2 = np.concatenate((filtered_cloud_lowes2, filtered_cloud["non_overlap"]), axis=0)
+
+        pcl2_msg_m =  point_cloud2.create_cloud_xyz32(header, final_points_median)
+        pcl2_msg_i =  point_cloud2.create_cloud_xyz32(header, final_points_lowes2)
+        
 
         self.filtred_points_median.publish(pcl2_msg_m)
         self.filtred_points_icp.publish(pcl2_msg_i)

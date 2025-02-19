@@ -11,6 +11,7 @@ def plot_data(data, ax, title):
     ax.clear()
     ax.scatter(data[:, 0], data[:, 1])
     ax.set_title(title)
+    plt.subplots_adjust(hspace=0.5) 
 
 def main():
     file_paths = ["plot_points/" + file for file in os.listdir("plot_points") if file.endswith(".npy")]
@@ -26,19 +27,25 @@ def main():
     step = 0
 
     while True:
-        for i, file_path in enumerate(file_paths):
-            if os.path.exists(file_path):
-                data = load_data(file_path)
-                if previous_data[i] is None or not np.array_equal(data, previous_data[i]):
-                    plot_data(data, axs[i], f"Plot {file_path.split('.')[0]}")
-                    previous_data[i] = data
+        try:
+            for i, file_path in enumerate(file_paths):
+                if os.path.exists(file_path):
+                    data = load_data(file_path)
+                    if previous_data[i] is None or not np.array_equal(data, previous_data[i]):
+                        plot_data(data, axs[i], f"Plot {file_path.split('.')[0]}")
+                        previous_data[i] = data
         
-        plt.draw()
-        plt.pause(0.1)
+            plt.draw()
+            plt.pause(0.1)
         
-        step += 1
-        if step % 100 == 0:
-            print(f"Step {step}: Updated plots")
+            step += 1
+            if step % 100 == 0:
+                print(f"Step {step}: Updated plots")
+           
+        except KeyboardInterrupt:
+            break
+        
+       
                 
         
         time.sleep(0.1)
