@@ -30,19 +30,7 @@ def median_filter_point_cloud(points, k=65):
 
     return filtered_points
 
-def lowes_ratio_filtering(points, threshold=0.75):
-    points = np.asarray(points)
-    distance = np.linalg.norm(points[:, np.newaxis]- points, axis=2)
 
-    closest_neighbours = np.sort(distance, axis=1)[:,1:3]
-
-    valid_indices = [
-        i for i,(d1,d2) in enumerate(closest_neighbours) if d1/d2 < threshold
-    ]
-
-    filtered_points = points[valid_indices]
-    
-    return filtered_points
 
 def lowes_filtering(points):
     points = np.asarray(points)
@@ -126,7 +114,7 @@ class filter_point_cloud:
     
     def call_filter(self, points, call_func = ""):
 
-        func_names = {"median": median_filter_point_cloud, "lowes": lowes_ratio_filtering, "lowes2": lowes_filtering}
+        func_names = {"median": median_filter_point_cloud, "lowes2": lowes_filtering}
         filtered_points = np.concatenate((func_names[call_func](points["overlap_left"]), func_names[call_func](points["overlap_right"])), axis=0)
 
         return filtered_points

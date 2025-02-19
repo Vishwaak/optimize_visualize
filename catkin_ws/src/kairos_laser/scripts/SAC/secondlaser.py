@@ -13,17 +13,13 @@
 import rospy
 import math
 import tf
-import time
 import numpy as np
 import tf.transformations
-from tf import TransformListener
-from scipy.spatial import ConvexHull
-from geometry_msgs.msg import Point
 from std_msgs.msg import Header
-from visualization_msgs.msg import Marker, MarkerArray
-from sensor_msgs.msg import LaserScan, PointCloud2
-from sensor_msgs.msg import Joy
 from sensor_msgs import point_cloud2
+import open3d as o3d
+from scipy.spatial import KDTree
+
 
 #-------------------------------------------------------------------------------------------------
 #   Class Definitions
@@ -32,11 +28,6 @@ from sensor_msgs import point_cloud2
 class LaserTransformer:
     #------------------------------------ CLASS CONSTRUCTOR --------------------------------------
     def __init__(self):
-        rospy.init_node('laser_transformer_node', anonymous=True)                      
-        self.front_pcld2_pub = rospy.Publisher('/front_transformed_pcld2', PointCloud2, queue_size=10) 
-        self.rear_pcld2_pub = rospy.Publisher('/rear_transformed_pcld2', PointCloud2, queue_size=10)
-        self.merged_pcld2_pub = rospy.Publisher('/merged_transformed_pcld2', PointCloud2, queue_size=10)
-        self.tf_listener = TransformListener()
         self.front_minAngle = 0                             # unit: radian
         self.front_maxAngle = 0                             # unit: radian
         self.front_angIncrement = 0                         # unit: radian
@@ -44,7 +35,7 @@ class LaserTransformer:
         self.front_maxRange = 0                             # unit: meters 
         self.front_ranges = []                              # unit: meters
         self.front_FoV = 0                                  # unit: count
-        self.front_noOfScans = 0                            # unit: meters
+        self.front_noOfScans = 0  
         self.rear_minAngle = 0                              # unit: radian
         self.rear_maxAngle = 0                              # unit: radian
         self.rear_angIncrement = 0                          # unit: radian
@@ -109,7 +100,8 @@ class LaserTransformer:
         if trans is None or rot is None:
             print("Frame transformation skipped. \n")
             return
-        transformed_points = []                                             # List of points transformed from the "LiDAR frame" to the "Base frame"
+        transformed_points = []       
+        self.merged_pointcould = []                                      # List of points transformed from the "LiDAR frame" to the "Base frame"
         for i, r in enumerate(self.front_ranges):
             if self.front_minRange < r < self.front_maxRange:
                 theta = self.getFrontAngle(i)                               # Converting Polar coordinates of the point to --
@@ -135,7 +127,7 @@ class LaserTransformer:
                 self.base_r_values.append(r_base)
                 self.base_theta_values.append(theta_base)
         self.merged_pointcould.extend(transformed_points)
-        #self.front_pcld2_pub.publish(pcld2_msg)
+
         
     # ROS Publisher function to publish the Rear LIDAR transformed points w.r.t. "robot_base_link"
     def get_rear_transformed_pointCloud(self):
@@ -170,41 +162,121 @@ class LaserTransformer:
                 self.base_r_values.append(r_base)
                 self.base_theta_values.append(theta_base)
         self.merged_pointcould.extend(transformed_points)
-        #self.rear_pcld2_pub.publish(pcld2_msg)
+       
+    
+    def split_points(self, points):
+
+        threshold_distance = 0.1
+
+        overlap_points_left = []
+        overlap_points_right = []
+        non_overlap = []
+    
+        
+        front_points = np.asarray(points[:len(points)//2])
+        back_points = np.asarray(points[len(points)//2:])
+
+        front_pcl = o3d.geometry.PointCloud()
+        back_pcl = o3d.geometry.PointCloud()
+
+        front_pcl.points = o3d.utility.Vector3dVector(front_points)
+        back_pcl.points = o3d.utility.Vector3dVector(back_points)
+
+        front_pcl_tree = o3d.geometry.KDTreeFlann(front_pcl)
+        back_pcl_tree = o3d.geometry.KDTreeFlann(back_pcl)
+
+
+        for fpoint, bpoint in zip(front_points, back_points):
+            _, idxb, _ = back_pcl_tree.search_knn_vector_3d(fpoint, 1)
+            _, idxf, _ = front_pcl_tree.search_knn_vector_3d(bpoint, 1)
+
+            closest_point_back = back_points[idxb[0]]
+            closest_point_front = front_points[idxf[0]]
+
+            distance_back = np.linalg.norm(fpoint - closest_point_back)
+            distance_front = np.linalg.norm(bpoint - closest_point_front)
+
+            if distance_back > threshold_distance:
+                non_overlap.append(fpoint)
+            else:
+                if fpoint[0] < 0:
+                    overlap_points_right.append(fpoint)
+                else:
+                    overlap_points_left.append(fpoint)
+            
+
+            if distance_front > threshold_distance:
+                non_overlap.append(bpoint)
+            else:
+                if bpoint[0] < 0:
+                    overlap_points_right.append(bpoint)
+                else:
+                    overlap_points_left.append(bpoint)
+                
+        filtered_points = {"overlap_left": overlap_points_left, "overlap_right": overlap_points_right, "non_overlap": non_overlap}
+
+    
+        return filtered_points
+    
+    def median_filter(self, points, k=65):
+
+        points = np.asarray(points)
+        print(points.shape)
+        if points.ndim == 1:
+            points = points[:, np.newaxis]
+
+        filtered_points = np.zeros_like(points)
+        tree = KDTree(points)
+
+        for i, point in enumerate(points):
+            _, indices = tree.query(point, k=k)
+            neighbors = points[indices]
+            filtered_points[i] = np.median(neighbors, axis=0)
+
+        return filtered_points
+    
+    def filter_points(self, points):
+        fil_points = self.split_points(points)
+        filtered_points = np.concatenate((self.median_filter(fil_points["overlap_left"]), self.median_filter(fil_points["overlap_right"])), axis=0)
+        final_points = np.concatenate((filtered_points, fil_points["non_overlap"]), axis=0)
+        print(len(final_points))
+        return final_points
+
+    def run_laser_transform(self):
+        self.get_front_transformed_pointCloud()
+        self.get_rear_transformed_pointCloud()
+        self.split_points(self.merged_pointcould)
+        return self.merged_pointcould
     
     # Merged pointcloud publisher
-    def publish_merged_transformed_pointCloud(self):
+    def publish_merged_transformed_pointCloud(self, cloud_data):
         header = Header()
         header.stamp = rospy.Time.now()
         header.frame_id = "robot_base_link"
-        pcld2_msg = point_cloud2.create_cloud_xyz32(header, self.merged_pointcould)
-        self.merged_pcld2_pub.publish(pcld2_msg)
-        return
+        pcld2_msg = point_cloud2.create_cloud_xyz32(header, cloud_data)
+        # self.merged_pcld2_pub.publish(pcld2_msg)
+        self.base_r_values = []
+        self.base_theta_values = []
+        return pcld2_msg
 
 #-------------------------------------------------------------------------------------------------
 #   Main Function
 #-------------------------------------------------------------------------------------------------
  
-if __name__ == '__main__':
-    try:
-        lt = LaserTransformer()
-        rospy.Subscriber('/robot/front_laser/scan_filtered', LaserScan, lt.frontScan_callback)
-        rospy.Subscriber('/robot/rear_laser/scan_filtered', LaserScan, lt.rearScan_callback)
-        '''lt.get_front_transformed_pointCloud()
-        lt.get_rear_transformed_pointCloud()
-        lt.publish_merged_transformed_pointCloud()
-        lt.base_r_values = []
-        lt.base_theta_values = []
-        lt.merged_pointcould =[]'''
-        loopRate = rospy.Rate(lt.loop_frequency)             # Loop rate frequency (250 Hz)
-        while not rospy.is_shutdown():
-            lt.get_front_transformed_pointCloud()       
-            lt.get_rear_transformed_pointCloud()
-            lt.publish_merged_transformed_pointCloud()
-            lt.base_r_values = []
-            lt.base_theta_values = []
-            lt.merged_pointcould = []
-            loopRate.sleep()
-    except rospy.ROSInterruptException:
-        rospy.logerr("*** ERROR *** \n")
-        pass
+# if __name__ == '__main__':
+#     try:
+#         lt = LaserTransformer()
+#         rospy.Subscriber('/robot/front_laser/scan_filtered', LaserScan, lt.frontScan_callback)
+#         rospy.Subscriber('/robot/rear_laser/scan_filtered', LaserScan, lt.rearScan_callback)
+#         loopRate = rospy.Rate(lt.loop_frequency)             # Loop rate frequency (250 Hz)
+#         while not rospy.is_shutdown():
+#             lt.get_front_transformed_pointCloud()       
+#             lt.get_rear_transformed_pointCloud()
+#             lt.publish_merged_transformed_pointCloud()
+#             lt.base_r_values = []
+#             lt.base_theta_values = []
+#             lt.merged_pointcould = []
+#             loopRate.sleep()
+#     except rospy.ROSInterruptException:
+#         rospy.logerr("*** ERROR *** \n")
+#         pass
