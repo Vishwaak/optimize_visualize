@@ -568,8 +568,8 @@ class SharedAutonomyController(LaserTransformer):
                 filtered_points = self.filter_points(self.merged_pointcould)
 
                 # enable if you want to publish the filtered pointcloud
-                # cloud_msg = self.publish_merged_transformed_pointCloud(filtered_points)
-                # self.merged_pcld2_pub.publish(cloud_msg)
+                cloud_msg = self.publish_merged_transformed_pointCloud(filtered_points)
+                self.merged_pcld2_pub.publish(cloud_msg)
                 
                 # ...Filtered_points is a list of numpy.ndarray elements - Cartesian coordinate form
                 # ...Convert each filtered_points coordinates to polar form and append to base r and theta values

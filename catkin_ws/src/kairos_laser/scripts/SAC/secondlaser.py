@@ -237,8 +237,16 @@ class LaserTransformer:
     
     def filter_points(self, points):
         fil_points = self.split_points(points)
-        filtered_points = np.concatenate((self.median_filter(fil_points["overlap_left"]), self.median_filter(fil_points["overlap_right"])), axis=0)
+        
+        if len(fil_points["overlap_left"]) != 0 and len(fil_points["overlap_right"]) != 0:
+            filtered_points = np.concatenate((self.median_filter(fil_points["overlap_left"]), self.median_filter(fil_points["overlap_right"])), axis=0)
+        elif len(fil_points["overlap_left"]) != 0:
+            filtered_points = self.median_filter(fil_points["overlap_left"])
+        elif len(fil_points["overlap_right"]) != 0:
+            filtered_points = self.median_filter(fil_points["overlap_right"])
+        
         final_points = np.concatenate((filtered_points, fil_points["non_overlap"]), axis=0)
+        
         print(len(final_points))
         return final_points
 
