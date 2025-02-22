@@ -18,8 +18,7 @@ import tf.transformations
 from std_msgs.msg import Header
 from sensor_msgs import point_cloud2
 import open3d as o3d
-from scipy.spatial import KDTree
-
+from scipy import ndimage
 
 #-------------------------------------------------------------------------------------------------
 #   Class Definitions
@@ -218,36 +217,47 @@ class LaserTransformer:
     
         return filtered_points
     
-    def median_filter(self, points, k=65):
+    def median_filter(self, points, k=2):
 
         points = np.asarray(points)
-        print(points.shape)
-        if points.ndim == 1:
-            points = points[:, np.newaxis]
 
-        filtered_points = np.zeros_like(points)
-        tree = KDTree(points)
+        
+        # if points.ndim == 1:
+        #     points = points[:, np.newaxis]
 
-        for i, point in enumerate(points):
-            _, indices = tree.query(point, k=k)
-            neighbors = points[indices]
-            filtered_points[i] = np.median(neighbors, axis=0)
+        # filtered_points = np.zeros_like(points)
+        # tree = KDTree(points)
 
+        # for i, point in enumerate(points):
+        #     _, indices = tree.query(point, k=k)
+        #     neighbors = points[indices]
+        #     filtered_points[i] = np.median(neighbors, axis=0)
+        z_point = points[0][2]
+        points = points[:,0:2]
+        filtered_points = ndimage.median_filter(points,size=(65,1))
+        filtered_points= np.pad(filtered_points, ((0, 0), (0, 1)), mode='constant', constant_values=z_point)
+
+        # filtered_points = points
         return filtered_points
     
-    def filter_points(self, points):
+    def filter_points(self, points, _filter_= False):
         fil_points = self.split_points(points)
         
-        if len(fil_points["overlap_left"]) != 0 and len(fil_points["overlap_right"]) != 0:
-            filtered_points = np.concatenate((self.median_filter(fil_points["overlap_left"]), self.median_filter(fil_points["overlap_right"])), axis=0)
-        elif len(fil_points["overlap_left"]) != 0:
-            filtered_points = self.median_filter(fil_points["overlap_left"])
-        elif len(fil_points["overlap_right"]) != 0:
-            filtered_points = self.median_filter(fil_points["overlap_right"])
-        
-        final_points = np.concatenate((filtered_points, fil_points["non_overlap"]), axis=0)
-        
-        print(len(final_points))
+        if _filter_ == True:
+            if len(fil_points["overlap_left"]) != 0 and len(fil_points["overlap_right"]) != 0:
+                filtered_points = np.concatenate((self.median_filter(fil_points["overlap_left"]), self.median_filter(fil_points["overlap_right"])), axis=0)
+            elif len(fil_points["overlap_left"]) != 0:
+                filtered_points = self.median_filter(fil_points["overlap_left"])
+            elif len(fil_points["overlap_right"]) != 0:
+                filtered_points = self.median_filter(fil_points["overlap_right"])
+            
+            if len(filtered_points) > 0:
+                final_points = np.concatenate((fil_points["non_overlap"],filtered_points), axis=0)
+            else:
+                final_points = fil_points["non_overlap"]
+        else:
+            final_points = self.median_filter(points,2)
+      
         return final_points
 
     def run_laser_transform(self):

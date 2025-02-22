@@ -564,9 +564,14 @@ class SharedAutonomyController(LaserTransformer):
             self.get_rear_transformed_pointCloud()
             filtered_points = []
             if self.merged_pointcould:
-                print("* Filtering points")
-                filtered_points = self.filter_points(self.merged_pointcould)
-
+                
+                
+                if len(self.merged_pointcould) > 1082:
+                    filtered_points = self.filter_points(self.merged_pointcould)
+                    print("* Filtering points")
+                else:
+                    filtered_points = self.merged_pointcould
+                    
                 # enable if you want to publish the filtered pointcloud
                 cloud_msg = self.publish_merged_transformed_pointCloud(filtered_points)
                 self.merged_pcld2_pub.publish(cloud_msg)
