@@ -557,11 +557,17 @@ class SharedAutonomyController(LaserTransformer):
                 if distance <= min_distance:
                     min_distance = distance
                     
+    def sort_polar_coordinates(self):
+        sorted_coordinates = sorted(zip(self.base_theta_values, self.base_r_values))
+        sorted_theta_values, sorted_r_values = zip(*sorted_coordinates)
+        return list(sorted_theta_values), list(sorted_r_values)
+                    
     def run(self):
         while not rospy.is_shutdown():
             # self.displayLaserSpecs()
             self.get_front_transformed_pointCloud()
             self.get_rear_transformed_pointCloud()
+            sorted_theta_values, sorted_r_values = self.sort_polar_coordinates()
             filtered_points = []
             if self.merged_pointcould:
                 
