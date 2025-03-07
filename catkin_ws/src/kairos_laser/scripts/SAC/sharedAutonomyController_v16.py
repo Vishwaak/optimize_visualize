@@ -114,7 +114,7 @@ class SharedAutonomyController:
         self.vfinal_joy = Joy()                             # To store the final Joy message to be published by the shared_autonomy_controller_node
         self.rep_mode = ALL_OBSTACLES                       # repulsion experienced from ALL_OBSTACLES / CLOSEST_OBSTACLE
 
-        self.flip_sac = 0
+        self.flip_sac = 1
     #--------------------------------- CLASS FUNCTION DEFINITIONS --------------------------------
     
     # ROS Callback function for the Front LIDAR LaserScan subscriber
@@ -401,11 +401,16 @@ class SharedAutonomyController:
         scan2.ranges = self.roi2_ranges                                     # ranges[] = roi2_ranges[] for ROI#2
         scan2.header.stamp = rospy.Time.now()
         self.scan2_pub.publish(scan2)                                       # Publish ROI#2
-        
+    
+    def unwrap_angle(self, degree):
+        if degree < 0:
+            diff = 180 + (degree)
+            return 180 + diff
+        return degree
     # ROS Publsiher function to publish arrows that indicate the repulsive forces exerted on the robot by obstacles
     def publish_potentialFields(self):
         rep_markerArray = MarkerArray()
-        
+        rep_degree = []
         for i, cPoint in enumerate(self.closestPoints):
             rho_xy = math.sqrt(cPoint.x**2 + cPoint.y**2)
             rep_unit_x = -cPoint.x / rho_xy                                 # Calculating unit vector for the repulsive force
@@ -448,7 +453,15 @@ class SharedAutonomyController:
             rep_marker.points.append(rep_point)
             rep_marker.header.stamp = rospy.Time.now()
             rep_marker.lifetime = rospy.Duration(self.marker_lifetime)
-            rep_markerArray.markers.append(rep_marker)                      # Adding the ARROW marker to the MarkerArray
+            rep_degree.append(self.unwrap_angle(math.degrees(math.atan2(rep_y, rep_x))))
+
+            if len(rep_degree) > 1 and rep_degree[-2] - rep_degree[-1] > 5:
+                rep_markerArray.markers.append(rep_marker)                      # Adding the ARROW marker to the MarkerArray
+            
+            if len(rep_degree) == 1:
+                rep_markerArray.markers.append(rep_marker)
+
+        print("purple degree", rep_degree)
         self.repForce_pub.publish(rep_markerArray)
     
     # For computing the resultant vector of the input list of vectors
@@ -521,9 +534,16 @@ class SharedAutonomyController:
             # normFactor1 = len(rep_vectors)
             # normFactor1 = len(rep_vectors) * 1.066666666666669
             normFactor1 = 1
-        self.rep_resultant.x = self.rep_resultant.x / normFactor1
-        self.rep_resultant.y = self.rep_resultant.y / normFactor1
-        self.rep_resultant.z = self.rep_resultant.z / normFactor1
+        mag = math.sqrt(self.rep_resultant.x**2 + self.rep_resultant.y**2) * 0.75
+        if  mag > 1.5:
+            
+            self.rep_resultant.x = self.rep_resultant.x / mag
+            self.rep_resultant.y = self.rep_resultant.y / mag
+            # self.rep_resultant.z = self.rep_resultant.z / mag
+
+        # self.rep_resultant.x = self.rep_resultant.x / normFactor1
+        # self.rep_resultant.y = self.rep_resultant.y / normFactor1
+        # self.rep_resultant.z = self.rep_resultant.z / normFactor1
         self.gen_obstacle_info()
         print(f"rep resultant magnitude = {math.sqrt(self.rep_resultant.x**2 + self.rep_resultant.y**2)}")
         resultant_marker = Marker()
