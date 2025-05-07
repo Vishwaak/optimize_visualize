@@ -1,0 +1,5 @@
+
+<launch>
+    <node pkg="kairos_laser" type="sharedAutonomyController_v16.py" name="SAC" output="screen"></node>
+    <param name="flip_sac" value="0" />
+</launch>

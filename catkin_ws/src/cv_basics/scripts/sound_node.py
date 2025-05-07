@@ -77,21 +77,20 @@ class sound_node:
                 if curr_distance < self.max_dst and curr_distance > 0:
                     self.choose_sound(self.obs_info)
     
-    def get_dir_sound(self, direction):
+    def get_dir_sound(self, curr_dir):
 
-        dir_lr = math.cos(math.radians(direction))
-        dir_fb = math.sin(math.radians(direction))
+        
         direction = []
 
-        if dir_lr > 0:
+        if curr_dir > 45 and curr_dir< 135:
             direction.append(self.sound_dict["right"])
-        else:
-            direction.append(self.sound_dict["left"])
-        
-        if dir_fb > 0:
-            direction.append(self.sound_dict["front"])
-        else:
+        elif curr_dir > 135 and curr_dir < 225:
             direction.append(self.sound_dict["back"])
+        
+        elif curr_dir > 225 and curr_dir < 315:
+            direction.append(self.sound_dict["left"])
+        elif curr_dir > 315 or curr_dir < 45:
+            direction.append(self.sound_dict["front"])
         
         return direction
     

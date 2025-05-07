@@ -100,22 +100,27 @@ class LaserTransformer:
             print("Frame transformation skipped. \n")
             return
         transformed_points = []       
-        self.merged_pointcould = []                                      # List of points transformed from the "LiDAR frame" to the "Base frame"
+        self.merged_pointcould = []  
+        degree_pt = []
+        r_base_f = []
+        r_theta_f = []
+        print(self.front_minRange, self.rear_maxRange)       # List of points transformed from the "LiDAR frame" to the "Base frame"
         for i, r in enumerate(self.front_ranges):
             if self.front_minRange < r < self.front_maxRange:
                 theta = self.getFrontAngle(i)                               # Converting Polar coordinates of the point to --
-                x_lidar = r * math.cos(theta)                               # -- Cartesian coordinates in the "LiDAR frame"
-                y_lidar = r * math.sin(theta)
-                z_lidar = 0.0  
-                lidar_point = np.array([x_lidar, y_lidar, z_lidar, 1.0])    # Defining lidar_point as a 4x1 vector (homogeneous coordinates)
-                Rq = tf.transformations.quaternion_matrix(rot)              # Obtaining 4x4 Quaternion matrix Rq which contains the 3x3 rotation matrix R
+                lidar_point = np.array([r*math.cos(theta),
+                                         r*math.sin(theta), 
+                                         0.0, 1.0])    # Defining lidar_point as a 4x1 vector (homogeneous coordinates)
+               
+               
+                Rq = tf.transformations.quaternion_matrix(rot)  
                 Tr = np.array([                                             # Obtaining 4x4 Homogeneous translation matrix Tr which contains the 3x1 translation vector t                                              
                     [1, 0, 0, trans[0]],
                     [0, 1, 0, trans[1]],
                     [0, 0, 1, trans[2]],
                     [0, 0, 0, 1]
-                ])
-                Tx = np.dot(Tr, Rq)                                         # Obtaining 4x4 Transformation matrix Tx = Tr * Rq = [[R], [t]; [0], [1]]
+                ])            # Obtaining 4x4 Quaternion matrix Rq which contains the 3x3 rotation matrix R        
+                Tx = np.dot(Tr, Rq)                                           # Obtaining 4x4 Transformation matrix Tx = Tr * Rq = [[R], [t]; [0], [1]]
                 base_point = np.dot(Tx, lidar_point)                        # Obtaining 4x1 vector base_point = H * lidar_point, which is the transformed point
                 x_base = base_point[0]                                      # Extracting Cartesian coordinates of the point in the "Base frame"
                 y_base = base_point[1]
@@ -123,15 +128,25 @@ class LaserTransformer:
                 transformed_points.append((x_base, y_base, z_base))
                 r_base = math.sqrt(x_base**2 + y_base**2)                   # Converting Cartesian coordinates of base_point to Polar form
                 theta_base = math.atan2(y_base, x_base)
-                self.base_r_values.append(r_base)
-                self.base_theta_values.append(theta_base)
-        self.merged_pointcould.extend(transformed_points)
+                degree_pt.append(math.degrees(theta_base))
+                r_base_f.append(r_base)
+                r_theta_f.append(theta_base)
+                
+             
+              
+            self.merged_pointcould.extend(transformed_points)
+        # print("frontm min", min(degree_pt), "front max", max(degree_pt))
+        return r_base_f, r_theta_f, degree_pt
 
         
     # ROS Publisher function to publish the Rear LIDAR transformed points w.r.t. "robot_base_link"
     def get_rear_transformed_pointCloud(self):
         # Obtaining transfomation from "LiDAR frame" to the "Base frame"
         trans, rot = self.getTransform("robot_base_link", "robot_rear_laser_link")
+        degree_pt = []
+        r_base_b = []
+        r_theta_b = []
+
         if trans is None or rot is None:
             print("Frame transformation skipped. \n")
             return
@@ -158,9 +173,14 @@ class LaserTransformer:
                 transformed_points.append((x_base, y_base, z_base))
                 r_base = math.sqrt(x_base**2 + y_base**2)                   # Converting Cartesian coordinates of base_point to Polar form
                 theta_base = math.atan2(y_base, x_base)
-                self.base_r_values.append(r_base)
-                self.base_theta_values.append(theta_base)
+                r_base_b.append(r_base)
+                r_theta_b.append(theta_base)
+                degree_pt.append(math.degrees(theta_base))
         self.merged_pointcould.extend(transformed_points)
+        
+        # print("rear min", min(degree_pt), "rear max", max(degree_pt))
+        return r_base_b, r_theta_b, degree_pt
+    
        
     
     def split_points(self, points):
@@ -276,6 +296,19 @@ class LaserTransformer:
         self.base_r_values = []
         self.base_theta_values = []
         return pcld2_msg
+
+    def cartisian_polar(self, points):
+        polar_points = []
+        r_values = []
+        for point in points:
+            r = math.sqrt(point[0]**2 + point[1]**2)
+            theta = math.atan2(point[1], point[0])
+            r_values.append(r)
+            polar_points.append(theta)
+        return polar_points, r_values
+    
+  
+
 
 #-------------------------------------------------------------------------------------------------
 #   Main Function

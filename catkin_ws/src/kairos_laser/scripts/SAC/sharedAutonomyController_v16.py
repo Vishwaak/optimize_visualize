@@ -91,8 +91,8 @@ class SharedAutonomyController:
         self.rear_noOfScans = 0                             # unit: meters
         self.scan_threshold_range = 5                       # unit: meters
         self.marker_threshold_range = 2.0                   # unit: meters
-        self.rho_0 = 1.5                                    # unit: meters
-        self.rho_cap = 0.75                                 # unit: meters
+        self.rho_0 = 1.0                                    # unit: meters
+        self.rho_cap = 0.6                                 # unit: meters
         self.loop_frequency = 250                           # unit: hertz
         self.marker_lifetime = 1/self.loop_frequency        # uint: seconds
         self.k_rep = K_REP                                  # unit: repulsive field constant     ...use for no normalization
@@ -114,7 +114,7 @@ class SharedAutonomyController:
         self.vfinal_joy = Joy()                             # To store the final Joy message to be published by the shared_autonomy_controller_node
         self.rep_mode = ALL_OBSTACLES                       # repulsion experienced from ALL_OBSTACLES / CLOSEST_OBSTACLE
 
-        self.flip_sac = 1
+        self.flip_sac = rospy.get_param('flip_sac', 1)
     #--------------------------------- CLASS FUNCTION DEFINITIONS --------------------------------
     
     # ROS Callback function for the Front LIDAR LaserScan subscriber
@@ -307,8 +307,6 @@ class SharedAutonomyController:
         n = len(points)
         g_x = (1/n) * sum_x                                                 # Centroid x-coordinate
         g_y = (1/n) * sum_y                                                 # Centroid y-coordinate
-        #print(f"g_x = {g_x}")
-        #print(f"g_y = {g_y}")
         self.centroids.append(Point(g_x, g_y, 0))
         return Point(g_x, g_y, 0)
     

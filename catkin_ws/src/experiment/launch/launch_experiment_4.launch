@@ -1,0 +1,11 @@
+
+<launch>
+
+    <node pkg="kairos_laser" type="sharedAutonomyController_v16.py" name="SAC" output="screen"></node> 
+    <node pkg="cv_basics" type="seg_node.py" name="image_inference" output="screen"></node>
+    <!-- <node pkg="cv_basics" type="sound_node.py" name="sound_inference" clear_params="true" output="screen"> </node> -->
+    <node pkg="cv_basics" type="haptic_node.py" name="haptic_inference" clear_params="true" output="screen"></node>
+    <node pkg="cv_basics" type="poly_node.py" name="poly_inferce" output="screen"> </node>
+    <param name="color_option" value="1" />
+    <param name="flip_sac" value="1" />
+</launch>

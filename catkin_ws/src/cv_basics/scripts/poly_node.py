@@ -18,7 +18,7 @@ class polyNode:
         self.data_queue = []
         self.bridge = CvBridge()
 
-        self.visual_output = SegmentVisual()
+        self.visual_output = SegmentVisual(color_option=rospy.get_param("color_option"))
         rospy.Rate(15)
     
     def data_callback(self, data):

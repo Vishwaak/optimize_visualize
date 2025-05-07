@@ -6,6 +6,7 @@ import rospy
 
 # ROS Image message
 from sensor_msgs.msg import Image
+from sensor_msgs.msg import CompressedImage
 
 from cv_basics.msg import poly
 
@@ -40,9 +41,9 @@ import numpy as np
 
 
 class InferenceNode:
-    def __init__(self, flag="onnx"):
+    def __init__(self):
         rospy.init_node("inference_node")
-        self.subscriber = rospy.Subscriber("/robot/front_rgbd_camera/rgb/image_raw", Image, self.data_callback)
+        self.subscriber = rospy.Subscriber("/robot/front_rgbd_camera/rgb/image_raw/compressed", CompressedImage, self.data_callback)
         self.publisher = rospy.Publisher(
             "/seg_img", Image, queue_size=100, latch=True
         )
@@ -65,7 +66,7 @@ class InferenceNode:
         self.frame_count = 0
         self.frame_skip = 2
 
-        self.visual_output = SegmentVisual()
+        self.visual_output = SegmentVisual(color_option=rospy.get_param("color_option"))
 
         print("InferenceNode initialized")
         self.predict_prc = mp.Process(
@@ -104,7 +105,7 @@ class InferenceNode:
 
                 if input_data is not None:
 
-                    input_image = self.bridge.imgmsg_to_cv2(input_data, "bgr8")
+                    input_image = self.bridge.compressed_imgmsg_to_cv2(input_data, "bgr8")
                     input_image = PILImage.fromarray(
                         cv2.cvtColor(input_image, cv2.COLOR_BGR2RGB)
                     )
@@ -190,11 +191,13 @@ class InferenceNode:
 
     def stop(self):
         self.running = False
+        self.predict_prc.terminate()
+        self.seg_prc.terminate()
 
 
 if __name__ == "__main__":
     # withtout onnx 0.1
-    node = InferenceNode("onnx")
+    node = InferenceNode()
     try:
         node.start()
         rospy.spin()

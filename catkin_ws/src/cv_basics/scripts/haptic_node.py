@@ -18,8 +18,8 @@ class haptic_node:
         self.rate = rospy.Rate(100)
 
         self.force_step = 2
-        self.min_dst = 7
-        self.max_dst = 15
+        self.min_dst = 6
+        self.max_dst = 10
         self.scaleL = 50
         self.scaleR = 255
         self.force_func = 4

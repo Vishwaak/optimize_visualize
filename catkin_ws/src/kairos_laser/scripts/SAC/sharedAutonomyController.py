@@ -74,6 +74,7 @@ class SharedAutonomyController(LaserTransformer):
         self.vfinal_marker_pub = rospy.Publisher('/vfinal_marker', Marker, queue_size=10)        # Creating a ROS Publisher for the final velocity signal arrow marker
         self.vfinal_joy_pub = rospy.Publisher('/robot/joy', Joy, queue_size=10)                  # Creating a ROS Publisher for the final velocity signal joy message
         self.obstacle_info = rospy.Publisher('/obstacle_info', obstacle, queue_size=1)    # Creating a ROS Publisher for the direction of the closest obstacle
+        self.custom_scan = rospy.Publisher('/custom_scan', LaserScan, queue_size=10)
         self.scan_header = Header()                                                             # Creating a Header object for the LaserScan messages
         self.scan_threshold_range = 5                       # unit: meters
         self.marker_threshold_range = 2.0                   # unit: meters
@@ -82,8 +83,8 @@ class SharedAutonomyController(LaserTransformer):
         self.loop_frequency = 250                           # unit: hertz
         self.marker_lifetime = 1/self.loop_frequency        # uint: seconds
         self.k_rep = K_REP                                  # unit: repulsive field constant     ...use for no normalization
-        # self.base_r_values = []                             # Polar coordinate - r values of LaserScan points that are transformed from "robot_front_laser_link" to "robot_base_link" 
-        # self.base_theta_values = []                         # Polar coordinate - theta values of the transformed LaserScan points from "robot_front_laser_link" to "robot_base_link"
+        self.base_r_values = []                             # Polar coordinate - r values of LaserScan points that are transformed from "robot_front_laser_link" to "robot_base_link" 
+        self.base_theta_values = []                         # Polar coordinate - theta values of the transformed LaserScan points from "robot_front_laser_link" to "robot_base_link"
         self.roi1_ranges = []                               # LaserScan ranges[] for the ROI#1 of all sub-threshold obstacles captured in one LIDAR scan. Re-initialized in publish_obstacles()
         self.roi2_ranges = []                               # LaserScan ranges[] for the ROI#2 of all sub-threshold obstacles captured in one LIDAR scan. Re-initialized in publish_obstacles()
         self.centroids = []                                 # List of centroids of obstacles detected in a single LIDAR scan
@@ -217,6 +218,7 @@ class SharedAutonomyController(LaserTransformer):
     # For computing the Region of Influence (roi_ranges[]) of the obstacle based on it's convex hull 
     def compute_roi1(self, points, centroid):
         #cvxhull_points = self.compute_convexhull(points)
+        # print(points)
         for point in points:                                                # iterate over cvxhull_points if computing convex hull
             dir1_x = point.x - centroid.x                                   # Generating direction vector from the centroid g to the obstacle point p (dir2 = p - g)
             dir1_y = point.y - centroid.y
@@ -230,7 +232,9 @@ class SharedAutonomyController(LaserTransformer):
             roi1_theta =  math.atan2(roi1_y, roi1_x)
             if (self.front_minAngle <= roi1_theta <= self.front_maxAngle):
                 index = int((roi1_theta - self.front_minAngle)/self.front_angIncrement)
-                self.roi1_ranges[index] = roi1_r                            # roi1_ranges[] will have the value equal to polar "r" of the ROI point,--
+                # print(index)
+                if index < len(self.roi1_ranges):
+                    self.roi1_ranges[index] = roi1_r                            # roi1_ranges[] will have the value equal to polar "r" of the ROI point,--
                                                                             # --at index which depends on polar "theta" of the ROI point.
 
     # For computing the Region of Influence (roi_ranges[]) of the obstacle based on it's convex hull 
@@ -249,7 +253,8 @@ class SharedAutonomyController(LaserTransformer):
             roi2_theta =  math.atan2(roi2_y, roi2_x)
             if (self.front_minAngle <= roi2_theta <= self.front_maxAngle):
                 index = int((roi2_theta - self.front_minAngle)/self.front_angIncrement)
-                self.roi2_ranges[index] = roi2_r                            # roi2_ranges[] will have the value equal to polar "r" of the ROI point,--
+                if index < len(self.roi2_ranges):
+                    self.roi2_ranges[index] = roi2_r                            # roi2_ranges[] will have the value equal to polar "r" of the ROI point,--
                                                                             # --at index which depends on polar "theta" of the ROI point.
     
     # ROS Publisher function to publish a region of influence (ROI#1) padding over all the thresholded obstacles using a LaserScan message
@@ -557,42 +562,128 @@ class SharedAutonomyController(LaserTransformer):
                 if distance <= min_distance:
                     min_distance = distance
                     
-    def sort_polar_coordinates(self):
-        sorted_coordinates = sorted(zip(self.base_theta_values, self.base_r_values))
+    def sort_polar_coordinates(self, theta, r_value):
+        sorted_coordinates = sorted(zip(theta, r_value), key=lambda x: x[0])
         sorted_theta_values, sorted_r_values = zip(*sorted_coordinates)
         return list(sorted_theta_values), list(sorted_r_values)
+    
+    def publish_custom_scan(self, theta, sorted_r_values):
+        scan = LaserScan()
+        scan.header.frame_id = 'robot_base_link'
+        scan.angle_min = 0
+        scan.angle_max = 6.28318548203
+        scan.angle_increment = (6.2831) / len(theta)
+        scan.range_min = min(sorted_r_values)
+        scan.range_max = max(sorted_r_values)
+        scan.ranges = sorted_r_values
+        scan.header.stamp = rospy.Time.now()
+        self.custom_scan.publish(scan)
                     
     def run(self):
         while not rospy.is_shutdown():
             # self.displayLaserSpecs()
-            self.get_front_transformed_pointCloud()
-            self.get_rear_transformed_pointCloud()
-            sorted_theta_values, sorted_r_values = self.sort_polar_coordinates()
-            filtered_points = []
-            if self.merged_pointcould:
-                
-                
-                if len(self.merged_pointcould) > 1082:
-                    filtered_points = self.filter_points(self.merged_pointcould)
-                    print("* Filtering points")
-                else:
-                    filtered_points = self.merged_pointcould
+            r_base_f, r_theta_f, degree_f = self.get_front_transformed_pointCloud()
+            r_base_b, r_theta_b, degree_b = self.get_rear_transformed_pointCloud()
+
+            r_base = []
+            r_theta = []
+            r_degree = []
+
+            r_base.extend(r_base_f)
+            r_base.extend(r_base_b)
+
+            r_theta.extend(r_theta_f)
+            r_theta.extend(r_theta_b)
+
+            r_degree.extend(degree_f)
+            r_degree.extend(degree_b)
+            
+            print(f"r_base: {len(r_base)}")
+            print(f"r_theta: {len(r_theta)}")
+            print(f"r_degree: {len(r_degree)}")
+            print(f"r_base: {len(self.merged_pointcould)}")
+            sort = sorted(zip(r_degree, r_base, r_theta), key=lambda x: x[0])
+            
+            degree, r_base, r_theta = zip(*sort)
+
+
+            final_degree = []
+            final_r_base = []
+            final_r_theta = []
+            
+            SKIP = 0
+
+            # print(f"degree: {len(degree)}")
+            i = 0
+            while i < len(degree) - 1:
+                # print(f"degree[i]: {degree[i+1] - degree[i]}")
+                if degree[i+1] - degree[i] < 0.23:
                     
-                # enable if you want to publish the filtered pointcloud
-                cloud_msg = self.publish_merged_transformed_pointCloud(filtered_points)
-                self.merged_pcld2_pub.publish(cloud_msg)
+                    final_degree.append((degree[i]))
+                    final_r_base.append((r_base[i]))
+                        # final_r_cloud.append(self.merged_pointcould[i])
+                    final_r_theta.append(r_theta[i])
+                    i += 2
+                    SKIP += 1
+                else:
+                    final_degree.append(degree[i])
+                    final_r_base.append(r_base[i])
+                    final_r_theta.append(r_theta[i])
+                i += 1
+                # print(i)
+            
+
+            # print(f"SKIP: {SKIP}")
+            print(f"final_degree: {len(final_degree)}")
+            print(f"final_r_base: {len(final_r_base)}")
+            self.publish_custom_scan(final_degree, final_r_base)
+
+            self.filtered_r_values = final_r_base
+            self.filtered_theta_values = final_r_theta
+            self.publish_obstacles()
+            self.publish_centroids()
+
+            # if len(self.merged_pointcould) > 1082:
+            #     theta, r_values =self.cartisian_polar(self.merged_pointcould)
+            #   filtered_points = self.filter_points(self.merged_pointcould)
+            #   cloud_msg = self.publish_merged_transformed_pointCloud(filtered_points)
+            # base_r_values.extend(base_r_values_b)
+            # base_theta_values.extend(base_theta_values_b)
+
+            # cloud_msg = self.publish_merged_transformed_pointCloud(self.merged_pointcould)
+            # self.merged_pcld2_pub.publish(cloud_msg)
+            # theta_vales, r_values = self.cartisian_polar(self.merged_pointcould)
+            # theta_vales, r_values = self.sort_polar_coordinates(theta_vales, r_values)
+           
+            # self.publish_custom_scan(base_theta_values, base_r_values)
+            
+           
+            # sorted_theta_values, sorted_r_values = self.sort_polar_coordinates()
+            # filtered_points = []
+            # if self.merged_pointcould:
                 
-                # ...Filtered_points is a list of numpy.ndarray elements - Cartesian coordinate form
-                # ...Convert each filtered_points coordinates to polar form and append to base r and theta values
-                for fp in filtered_points:
-                    self.filtered_r_values.append(math.sqrt(fp[0]**2 + fp[1]**2))
-                    self.filtered_theta_values.append(math.atan2(fp[1], fp[0]))
-                # ...Use these base polar coordinates in publish_obstacles() and call the subsequent methods
-                print("* Marking obstacles on RViz")
-                self.publish_obstacles()
-                self.publish_centroids()
-                self.publish_roi1()
-                self.publish_roi2()
+                
+            #     if len(self.merged_pointcould) > 1082:
+            #         filtered_points = self.filter_points(self.merged_pointcould)
+            #         print("* Filtering points")
+            #     else:
+            #         filtered_points = self.merged_pointcould
+                    
+            #     # enable if you want to publish the filtered pointcloud
+            #     cloud_msg = self.publish_merged_transformed_pointCloud(filtered_points)
+            #     self.merged_pcld2_pub.publish(cloud_msg)
+                
+            #     # ...Filtered_points is a list of numpy.ndarray elements - Cartesian coordinate form
+            #     # ...Convert each filtered_points coordinates to polar form and append to base r and theta values
+            #     for fp in filtered_points:
+            #         self.filtered_r_values.append(math.sqrt(fp[0]**2 + fp[1]**2))
+            #         self.filtered_theta_values.append(math.atan2(fp[1], fp[0]))
+            #     # ...Use these base polar coordinates in publish_obstacles() and call the subsequent methods
+            #     print("* Marking obstacles on RViz")
+            #     self.publish_obstacles()
+            #     self.publish_centroids()
+            #     self.publish_roi1()
+            #     self.publish_roi2()
                 # self.publish_potentialFields()
                 # self.publish_repulsiveResultant()
                 # self.publish_referenceSignal()
@@ -600,12 +691,12 @@ class SharedAutonomyController(LaserTransformer):
                 # self.publish_vfinal_joy()
                 # self.published_distance()
                 # ...Clear class attribute variables
-                self.filtered_r_values = []
-                self.filtered_theta_values = []
-                self.centroids = []
+            self.filtered_r_values = []
+            self.filtered_theta_values = []
+            self.centroids = []
                 # self.closestPoints = []
                 # self.rep_points = []
-                print("*** LIDAR Scan complete ***")
+            print("*** LIDAR Scan complete ***")
        
         
 #-------------------------------------------------------------------------------------------------
