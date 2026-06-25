@@ -1,0 +1,5 @@
+# variablemoved to launchfile experiment_type: 1
+# params for experiment type 1
+filp_sac: 0 # 1 turn on flip sac, 0 turn off flip sac
+
+# params for experiemnt type 2
